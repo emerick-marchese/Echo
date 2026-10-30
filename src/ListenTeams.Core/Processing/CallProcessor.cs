@@ -51,6 +51,7 @@ public sealed class CallProcessor
 
             string? summary = null;
             string? summaryError = null;
+            string? renameWith = null;
             var summarizer = _createSummarizer();
             if (summarizer is not null && paragraphs.Count > 0)
             {
@@ -61,6 +62,11 @@ public sealed class CallProcessor
                     var request = new SummaryRequest(metadata.Title, metadata.StartedAt, metadata.Duration, transcript, options.MyName, options.OthersName);
                     summary = await summarizer.SummarizeAsync(request, cancellationToken).ConfigureAwait(false);
                     await File.WriteAllTextAsync(folder.SummaryPath, summary, cancellationToken).ConfigureAwait(false);
+                    if (metadata.Title == CallMetadata.DefaultTitle && TitleFromSummary(summary) is { } title)
+                    {
+                        metadata.Title = title;
+                        renameWith = title;
+                    }
                 }
                 catch (SummaryException ex)
                 {
@@ -79,6 +85,9 @@ public sealed class CallProcessor
             metadata.Status = CallStatus.Done;
             metadata.Error = summaryError;
             folder.WriteMetadata(metadata);
+
+            // No title from the Teams window: name the folder after the summary title.
+            if (renameWith is not null) folder.RenameWithTitle(renameWith);
             return new ProcessingResult(folder, metadata, summaryError);
         }
         catch (OperationCanceledException)
@@ -163,6 +172,15 @@ public sealed class CallProcessor
             }
         }
         return new Envelope(frames, EnvelopeWriter.FrameSamples / (double)AudioClock.SampleRate);
+    }
+
+    /// <summary>First "# Title" line of the summary, if any.</summary>
+    internal static string? TitleFromSummary(string summary)
+    {
+        string? line = summary.Split('\n').Select(l => l.Trim()).FirstOrDefault(l => l.Length > 0);
+        if (line is null || !line.StartsWith("# ", StringComparison.Ordinal)) return null;
+        string title = line[2..].Trim().Trim('*').Trim();
+        return title.Length == 0 ? null : title.Length > 80 ? title[..80].Trim() : title;
     }
 
     private static string TranscriptHeader(CallMetadata metadata) =>

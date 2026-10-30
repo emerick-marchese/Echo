@@ -199,6 +199,13 @@ public class ReportAndSettingsTests
     }
 
     [Fact]
+    public void Summary_title_is_extracted()
+    {
+        Assert.Equal("Point projet", CallProcessor.TitleFromSummary("\n# **Point projet**\n\n## Résumé"));
+        Assert.Null(CallProcessor.TitleFromSummary("## Résumé\nTexte"));
+    }
+
+    [Fact]
     public void Folder_names_are_sanitized()
     {
         Assert.Equal("Réunion projet  Q4", CallFolder.SanitizeFileName("Réunion: projet / Q4?"));
@@ -221,7 +228,7 @@ public class PipelineTests
     {
         string root = TestPaths.TempDir();
         var folder = CallFolder.Create(root, new DateTime(2026, 10, 30, 9, 30, 0));
-        folder.WriteMetadata(new CallMetadata { Title = "Test", StartedAt = new DateTime(2026, 10, 30, 9, 30, 0), Status = CallStatus.Pending });
+        folder.WriteMetadata(new CallMetadata { StartedAt = new DateTime(2026, 10, 30, 9, 30, 0), Status = CallStatus.Pending });
 
         // 12 s call: I speak 1–3 s, others speak 5–8 s, I speak while muted in Teams at 9–11 s.
         using (var opus = new OpusRecordingWriter(folder.AudioPath, 24000, "Test"))
@@ -248,6 +255,10 @@ public class PipelineTests
 
         Assert.Equal(CallStatus.Done, result.Metadata.Status);
         Assert.Null(result.SummaryError);
+
+        // No Teams window title: the summary title names the call and its folder.
+        Assert.Equal("Synthèse factice", result.Metadata.Title);
+        Assert.EndsWith("2026-10-30 09h30 - Synthèse factice", folder.Path);
 
         // Only the two real speech parts reach the recogniser; the muted part is silent.
         double transcribed = transcriber.Pieces.Sum(p => p.Length) / (double)SpeechPieceBuilder.SampleRate;

@@ -14,7 +14,9 @@ public enum CallStatus
 
 public sealed class CallMetadata
 {
-    public string Title { get; set; } = "Appel Teams";
+    public const string DefaultTitle = "Appel Teams";
+
+    public string Title { get; set; } = DefaultTitle;
 
     public DateTime StartedAt { get; set; }
 

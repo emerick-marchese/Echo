@@ -67,9 +67,11 @@ internal sealed class SettingsForm : Form
         tabs.TabPages.Add(Page("Transcription", BuildTranscription()));
         tabs.TabPages.Add(Page("Synthèse", BuildSummary()));
 
-        var save = new Button { Text = "Enregistrer", AutoSize = true, DialogResult = DialogResult.OK };
-        var cancel = new Button { Text = "Annuler", AutoSize = true, DialogResult = DialogResult.Cancel };
+        // The form is modeless: buttons must close it themselves.
+        var save = new Button { Text = "Enregistrer", AutoSize = true };
+        var cancel = new Button { Text = "Annuler", AutoSize = true };
         save.Click += (_, _) => Save();
+        cancel.Click += (_, _) => Close();
         AcceptButton = save;
         CancelButton = cancel;
 

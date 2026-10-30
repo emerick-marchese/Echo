@@ -224,10 +224,13 @@ internal sealed class CallRecorder : IAsyncDisposable
         recorder.DataAvailable += (buffer, flags, _, qpcPosition) =>
         {
             var mono = converter.ToMono48k(buffer, flags.HasFlag(AudioClientBufferFlags.Silent));
-            long start = qpcPosition > 0
-                ? _mixer.FrameAt(qpcPosition)
-                : _mixer.FrameAt(AudioClock.Now100ns()) - mono.Length;
-            track.Write(mono, start);
+            // Use the capture timestamp from WASAPI; fall back to the arrival time if a
+            // driver reports none or one that is clearly off (more than 2 s away).
+            long now = AudioClock.Now100ns();
+            long captured = qpcPosition > 0 && Math.Abs(now - qpcPosition) < 20_000_000
+                ? qpcPosition
+                : now - mono.Length * 10_000_000L / AudioClock.SampleRate;
+            track.Write(mono, _mixer.FrameAt(captured));
         };
         recorder.RecordingStopped += (_, e) =>
         {

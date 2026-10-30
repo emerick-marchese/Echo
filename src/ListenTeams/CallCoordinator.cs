@@ -358,7 +358,7 @@ internal sealed class CallCoordinator : IAsyncDisposable
 
         metadata.EndedAt = DateTime.Now;
         metadata.DurationSeconds = duration.TotalSeconds;
-        metadata.Title = _titles.Title ?? "Appel Teams";
+        metadata.Title = _titles.Title ?? CallMetadata.DefaultTitle;
         metadata.MuteSource = DescribeMuteSources();
         metadata.Status = CallStatus.Pending;
         folder.WriteMetadata(metadata);
