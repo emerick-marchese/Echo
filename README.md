@@ -129,7 +129,7 @@ dotnet publish src/ListenTeams/ListenTeams.csproj -c Release -r win-x64 --self-c
 "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=1.0.0 installer\ListenTeams.iss
 ```
 
-L'installateur est produit dans `installer\Output\ListenTeams-Setup.exe`. Le workflow GitHub Actions `.github/workflows/build.yml` fait tout cela à chaque push (artefact téléchargeable) et publie une *Release* pour chaque tag `v*` (par exemple `git tag v1.0.0 && git push --tags`).
+L'installateur est produit dans `installer\Output\ListenTeams-Setup.exe`. Le workflow GitHub Actions `.github/workflows/build.yml` fait tout cela à chaque push (artefact téléchargeable). Pour publier une *Release* avec l'installateur : onglet *Actions* → **Build** → *Run workflow* en indiquant la version (par exemple `1.1.0`), ou poussez un tag `v*` (`git tag v1.1.0 && git push origin v1.1.0`).
 
 | Dossier | Contenu |
 |---|---|
