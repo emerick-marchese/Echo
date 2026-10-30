@@ -1,0 +1,63 @@
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Tests, app and installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Version
+        id: version
+        shell: pwsh
+        run: |
+          $version = "1.0.$env:GITHUB_RUN_NUMBER"
+          if ($env:GITHUB_REF -like 'refs/tags/v*') { $version = $env:GITHUB_REF_NAME.Substring(1) }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Tests
+        run: dotnet test tests/ListenTeams.Tests -c Release
+
+      - name: Publish (self-contained, no .NET install needed)
+        run: >-
+          dotnet publish src/ListenTeams/ListenTeams.csproj -c Release -r win-x64 --self-contained true
+          -p:Version=${{ steps.version.outputs.version }} -o publish
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
+
+      - name: Build ListenTeams-Setup.exe
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.version.outputs.version }}" installer\ListenTeams.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ListenTeams-Setup-${{ steps.version.outputs.version }}
+          path: installer/Output/ListenTeams-Setup.exe
+          if-no-files-found: error
+
+      - name: GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/Output/ListenTeams-Setup.exe
+          generate_release_notes: true
