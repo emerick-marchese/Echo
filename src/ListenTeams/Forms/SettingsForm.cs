@@ -9,6 +9,8 @@ internal sealed class SettingsForm : Form
 {
     private readonly SettingsStore _store;
 
+    private readonly CheckBox _recordTeams = new() { Text = "Microsoft Teams", AutoSize = true };
+    private readonly CheckBox _recordDiscord = new() { Text = "Discord", AutoSize = true };
     private readonly TextBox _outputFolder = new() { Width = 340 };
     private readonly TextBox _myName = new() { Width = 200 };
     private readonly TextBox _othersName = new() { Width = 200 };
@@ -100,7 +102,12 @@ internal sealed class SettingsForm : Form
         folderRow.Controls.Add(_outputFolder);
         folderRow.Controls.Add(browse);
 
+        var appsRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = Padding.Empty };
+        appsRow.Controls.Add(_recordTeams);
+        appsRow.Controls.Add(_recordDiscord);
+
         return Grid(
+            ("Enregistrer les appels", appsRow),
             ("Dossier des enregistrements", folderRow),
             ("Votre nom dans la transcription", _myName),
             ("Nom des autres participants", _othersName),
@@ -131,10 +138,10 @@ internal sealed class SettingsForm : Form
         return Grid(
             ("Qualité de l'enregistrement", _quality),
             ("Microphone", _microphone),
-            (null, Note("Choisissez le même micro que dans Teams (Teams → Paramètres → Appareils).")),
+            (null, Note("Choisissez le même micro que dans Teams ou Discord (Paramètres → Appareils / Voix et vidéo).")),
             (null, _echo),
             (null, _micUnknown),
-            (null, Note("Seul le son de Teams est capturé (pas les autres applications). Votre micro n'est enregistré que lorsqu'il est actif dans Teams. Un casque donne le meilleur résultat.")));
+            (null, Note("Seul le son de l'application d'appel est capturé (pas les autres applications). Votre micro n'est enregistré que lorsqu'il est actif dans Teams ou Discord. Un casque donne le meilleur résultat.")));
     }
 
     private Control BuildTranscription()
@@ -178,6 +185,8 @@ internal sealed class SettingsForm : Form
     private void LoadValues()
     {
         var s = _store.Current;
+        _recordTeams.Checked = s.RecordTeams;
+        _recordDiscord.Checked = s.RecordDiscord;
         _outputFolder.Text = s.OutputFolder;
         _myName.Text = s.MyName;
         _othersName.Text = s.OthersName;
@@ -217,6 +226,8 @@ internal sealed class SettingsForm : Form
         string apiKey = _apiKey.Text.Trim();
         _store.Update(s =>
         {
+            s.RecordTeams = _recordTeams.Checked;
+            s.RecordDiscord = _recordDiscord.Checked;
             s.OutputFolder = string.IsNullOrWhiteSpace(_outputFolder.Text) ? AppSettings.DefaultOutputFolder : _outputFolder.Text.Trim();
             s.MyName = Fallback(_myName.Text, "Moi");
             s.OthersName = Fallback(_othersName.Text, "Participants");

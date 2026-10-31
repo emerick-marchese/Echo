@@ -42,6 +42,7 @@ internal static class Program
             // Persist defaults so the next start is not considered a first run.
             settings.Update(_ => { });
         }
+        InstallerChoices.Apply(settings);
 
         Application.Run(new TrayApp(settings, background, firstRun));
     }

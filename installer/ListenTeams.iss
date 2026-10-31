@@ -23,7 +23,7 @@ DisableDirPage=auto
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; Windows 10 version 2004 or later: needed to capture the sound of Teams alone.
+; Windows 10 version 2004 or later: needed to capture the sound of the calling app alone.
 MinVersion=10.0.19041
 OutputDir=Output
 OutputBaseFilename=ListenTeams-Setup
@@ -41,7 +41,7 @@ ShowLanguageDialog=no
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
 
 [Tasks]
-Name: "autostart"; Description: "Lancer ListenTeams à l'ouverture de session (recommandé : il attend vos appels Teams en arrière-plan)"; GroupDescription: "Démarrage :"
+Name: "autostart"; Description: "Lancer ListenTeams à l'ouverture de session (recommandé : il attend vos appels en arrière-plan)"; GroupDescription: "Démarrage :"
 Name: "desktopicon"; Description: "Créer une icône sur le Bureau"; GroupDescription: "Raccourcis :"; Flags: unchecked
 
 [Files]
@@ -71,6 +71,7 @@ const
   ModelBaseUrl = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/';
 
 var
+  AppsPage: TInputOptionWizardPage;
   ModelPage: TInputOptionWizardPage;
   DownloadPage: TDownloadWizardPage;
   Downloaded: Boolean;
@@ -103,7 +104,18 @@ end;
 
 procedure InitializeWizard;
 begin
-  ModelPage := CreateInputOptionPage(wpSelectTasks,
+  AppsPage := CreateInputOptionPage(wpSelectTasks,
+    'Applications à enregistrer',
+    'Quels appels ListenTeams doit-il enregistrer automatiquement ?',
+    'Cochez Teams, Discord ou les deux. Vous pourrez changer ce choix à tout moment ' +
+    '(clic droit sur l''icône ListenTeams → Applications à enregistrer).',
+    False, False);
+  AppsPage.Add('Microsoft Teams (application de bureau)');
+  AppsPage.Add('Discord (application de bureau, salons vocaux et appels)');
+  AppsPage.Values[0] := True;
+  AppsPage.Values[1] := True;
+
+  ModelPage := CreateInputOptionPage(AppsPage.ID,
     'Modèle de transcription',
     'Choisissez la précision de la transcription des appels.',
     'La transcription est faite sur ce PC, après chaque appel. Le modèle est téléchargé une seule fois ; ' +
@@ -123,6 +135,12 @@ var
   FileName: String;
 begin
   Result := True;
+  if (CurPageID = AppsPage.ID) and not (AppsPage.Values[0] or AppsPage.Values[1]) then
+  begin
+    MsgBox('Choisissez au moins une application (Teams ou Discord).', mbError, MB_OK);
+    Result := False;
+    Exit;
+  end;
   if CurPageID <> wpReady then
     Exit;
 
@@ -149,9 +167,32 @@ begin
   end;
 end;
 
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  Apps: String;
+begin
+  // ListenTeams reads this choice at its next start, then removes the value.
+  if CurStep = ssPostInstall then
+  begin
+    Apps := '';
+    if AppsPage.Values[0] then
+      Apps := 'Teams';
+    if AppsPage.Values[1] then
+    begin
+      if Apps <> '' then
+        Apps := Apps + ',';
+      Apps := Apps + 'Discord';
+    end;
+    RegWriteStringValue(HKEY_CURRENT_USER, 'Software\{#AppName}', 'Apps', Apps);
+  end;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   // The app can also enable automatic start from its settings.
   if CurUninstallStep = usPostUninstall then
+  begin
     RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', '{#AppName}');
+    RegDeleteKeyIncludingSubkeys(HKEY_CURRENT_USER, 'Software\{#AppName}');
+  end;
 end;

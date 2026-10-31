@@ -10,9 +10,10 @@ internal sealed record RecorderOptions(int OpusBitrate, string MicrophoneDeviceI
 /// <summary>
 /// Records one call:
 /// <list type="bullet">
-/// <item>Teams audio only, through WASAPI per-process loopback on the Teams process tree
-/// (other applications, notifications, music… are not captured);</item>
-/// <item>the microphone, silenced whenever the user is muted in Teams.</item>
+/// <item>the calling application's audio only (Teams or Discord), through WASAPI
+/// per-process loopback on its process tree (other applications, notifications, music…
+/// are not captured);</item>
+/// <item>the microphone, silenced whenever the user is muted in that application.</item>
 /// </list>
 /// Both are mixed live into an Opus file.
 /// </summary>
@@ -50,13 +51,13 @@ internal sealed class CallRecorder : IAsyncDisposable
 
     public static async Task<CallRecorder> StartAsync(
         string audioPath, string envelopePath, string title, RecorderOptions options,
-        IReadOnlyList<int> teamsProcessIds, bool initiallyMuted)
+        IReadOnlyList<int> appProcessIds, bool initiallyMuted)
     {
         var recorder = new CallRecorder(audioPath, envelopePath, title, options, initiallyMuted);
         try
         {
             recorder.StartMicrophone();
-            await recorder.AttachTeamsProcessesAsync(teamsProcessIds).ConfigureAwait(false);
+            await recorder.AttachProcessesAsync(appProcessIds).ConfigureAwait(false);
             recorder._mixThread.Start();
             return recorder;
         }
@@ -67,15 +68,15 @@ internal sealed class CallRecorder : IAsyncDisposable
         }
     }
 
-    /// <summary>Applies a Teams mute change (placed slightly in the past to cover Teams' reporting delay).</summary>
+    /// <summary>Applies a mute change (placed slightly in the past to cover the application's reporting delay).</summary>
     public void SetMuted(bool muted)
     {
         long when = AudioClock.Now100ns() - _options.MuteLookBackMs * 10_000L;
         _mixer.MicGate.SetMuted(muted, _mixer.FrameAt(when));
     }
 
-    /// <summary>Starts capturing Teams processes we do not capture yet (e.g. Teams restarted).</summary>
-    public async Task AttachTeamsProcessesAsync(IReadOnlyList<int> processIds)
+    /// <summary>Starts capturing application processes we do not capture yet (e.g. the app restarted).</summary>
+    public async Task AttachProcessesAsync(IReadOnlyList<int> processIds)
     {
         if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
         {
@@ -89,12 +90,12 @@ internal sealed class CallRecorder : IAsyncDisposable
             try
             {
                 var recorder = await BuildProcessLoopbackAsync(pid).ConfigureAwait(false);
-                Attach(recorder, _mixer.AddTrack($"teams-{pid}", TrackRole.Remote));
-                Log.Info($"Capture audio de Teams (processus {pid}) : {recorder.WaveFormat}");
+                Attach(recorder, _mixer.AddTrack($"app-{pid}", TrackRole.Remote));
+                Log.Info($"Capture audio de l'application (processus {pid}) : {recorder.WaveFormat}");
             }
             catch (Exception ex)
             {
-                Log.Error($"Capture par processus impossible pour Teams ({pid})", ex);
+                Log.Error($"Capture par processus impossible ({pid})", ex);
                 _capturedProcesses.Remove(pid);
                 _failedProcesses.Add(pid);
                 if (!CapturesWholeSystem && _capturedProcesses.Count == 0)

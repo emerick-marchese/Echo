@@ -1,4 +1,5 @@
 using ListenTeams.Core;
+using ListenTeams.Core.Apps;
 using ListenTeams.Core.Output;
 using ListenTeams.Core.Settings;
 using ListenTeams.Core.Teams;
@@ -18,6 +19,7 @@ internal sealed class TrayApp : ApplicationContext
     private readonly ToolStripMenuItem _detailItem;
     private readonly ToolStripMenuItem _recordItem;
     private readonly ToolStripMenuItem _recentItem;
+    private readonly ToolStripMenuItem _appsItem;
     private readonly System.Windows.Forms.Timer _refreshTimer;
     private string? _balloonPath;
     private TrayState? _shownState;
@@ -35,6 +37,19 @@ internal sealed class TrayApp : ApplicationContext
         _recentItem = new ToolStripMenuItem("Appels récents");
         _recentItem.DropDownItems.Add(new ToolStripMenuItem("(aucun)") { Enabled = false });
 
+        // Choice of the applications to record: Teams, Discord or both.
+        _appsItem = new ToolStripMenuItem("Applications à enregistrer");
+        foreach (var info in CallApps.All)
+        {
+            var app = info.App;
+            var item = new ToolStripMenuItem(info.App == CallApp.Teams ? "Microsoft Teams" : info.DisplayName) { CheckOnClick = true };
+            item.CheckedChanged += (_, _) =>
+            {
+                if (_settings.Current.IsEnabled(app) != item.Checked) _settings.Update(s => s.SetEnabled(app, item.Checked));
+            };
+            _appsItem.DropDownItems.Add(item);
+        }
+
         var menu = new ContextMenuStrip();
         menu.Items.AddRange(
         [
@@ -46,13 +61,21 @@ internal sealed class TrayApp : ApplicationContext
             _recentItem,
             new ToolStripMenuItem("Ouvrir le dossier des enregistrements", null, (_, _) => OpenOutputFolder()),
             new ToolStripSeparator(),
+            _appsItem,
             new ToolStripMenuItem("Connexion à Teams…", null, (_, _) => ShowTeamsConnection()),
             new ToolStripMenuItem("Paramètres…", null, (_, _) => ShowSettings()),
             new ToolStripMenuItem("Journaux", null, (_, _) => AppPaths.Open(AppPaths.LogsFolder)),
             new ToolStripSeparator(),
             new ToolStripMenuItem("Quitter ListenTeams", null, async (_, _) => await ExitAsync()),
         ]);
-        menu.Opening += (_, _) => RefreshRecentCalls();
+        menu.Opening += (_, _) =>
+        {
+            RefreshRecentCalls();
+            for (int i = 0; i < CallApps.All.Count; i++)
+            {
+                ((ToolStripMenuItem)_appsItem.DropDownItems[i]).Checked = _settings.Current.IsEnabled(CallApps.All[i].App);
+            }
+        };
 
         _icon = new NotifyIcon
         {
@@ -81,14 +104,14 @@ internal sealed class TrayApp : ApplicationContext
         {
             ShowNotification(new UserNotification(
                 "ListenTeams est installé",
-                "Il enregistrera automatiquement vos appels Teams. Configurez la synthèse dans les paramètres."));
+                $"Il enregistrera automatiquement vos appels {EnabledAppsText(_settings.Current)}. Configurez la synthèse dans les paramètres."));
             ShowSettings();
         }
         else if (!startedInBackground)
         {
             ShowNotification(new UserNotification(
                 "ListenTeams est actif",
-                "Il attend vos appels Teams dans la zone de notification (près de l'horloge)."));
+                $"Il attend vos appels {EnabledAppsText(_settings.Current)} dans la zone de notification (près de l'horloge)."));
         }
     }
 
@@ -96,24 +119,34 @@ internal sealed class TrayApp : ApplicationContext
     {
         string main;
         string? detail = null;
-        if (status.Recording)
+        string watched = status.EnabledApps.Count == 0
+            ? "aucune application"
+            : string.Join(" ou ", status.EnabledApps.Select(CallApps.Name));
+        if (status.RecordingApp is { } app)
         {
-            main = $"● Enregistrement en cours — {status.Elapsed:hh\\:mm\\:ss}";
+            string name = CallApps.Name(app);
+            main = $"● Enregistrement {name} — {status.Elapsed:hh\\:mm\\:ss}";
             detail = status.Mute switch
             {
-                { Source: MuteSource.Unknown, Muted: true } => "Micro : état Teams inconnu, votre voix n'est pas enregistrée",
-                { Source: MuteSource.Unknown } => "Micro : état Teams inconnu, votre voix est enregistrée",
-                { Muted: true } => "Micro coupé dans Teams : votre voix n'est pas enregistrée",
-                _ => "Micro actif dans Teams : votre voix est enregistrée",
+                { Source: MuteSource.Unknown, Muted: true } => $"Micro : état {name} inconnu, votre voix n'est pas enregistrée",
+                { Source: MuteSource.Unknown } => $"Micro : état {name} inconnu, votre voix est enregistrée",
+                { Muted: true } => $"Micro coupé dans {name} : votre voix n'est pas enregistrée",
+                _ => $"Micro actif dans {name} : votre voix est enregistrée",
             };
         }
-        else if (status.TeamsRunning)
+        else if (status.EnabledApps.Count == 0)
         {
-            main = "En attente d'un appel Teams";
+            main = "Aucune application choisie (menu Applications à enregistrer)";
+        }
+        else if (status.RunningApps.Count > 0)
+        {
+            main = $"En attente d'un appel {watched}";
         }
         else
         {
-            main = "Teams n'est pas lancé";
+            main = status.EnabledApps.Count == 1
+                ? $"{watched} n'est pas lancé"
+                : $"{string.Join(" et ", status.EnabledApps.Select(CallApps.Name))} ne sont pas lancés";
         }
 
         if (status.ProcessingText is not null || status.ProcessingQueueLength > 0)
@@ -136,6 +169,12 @@ internal sealed class TrayApp : ApplicationContext
 
         string tooltip = "ListenTeams — " + main;
         _icon.Text = tooltip.Length > 127 ? tooltip[..127] : tooltip;
+    }
+
+    private static string EnabledAppsText(AppSettings settings)
+    {
+        var names = CallApps.All.Where(a => settings.IsEnabled(a.App)).Select(a => a.DisplayName).ToList();
+        return names.Count == 0 ? "Teams et Discord" : string.Join(" et ", names);
     }
 
     private void ShowNotification(UserNotification notification)

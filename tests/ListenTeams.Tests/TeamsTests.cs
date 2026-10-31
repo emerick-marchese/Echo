@@ -139,7 +139,7 @@ public class CallDetectorTests
     public void Api_meeting_starts_recording_immediately_and_ends_after_delay()
     {
         var detector = new CallDetector();
-        detector.SetTeamsRunning(true);
+        detector.SetAppRunning(true);
         Assert.Equal(CallEvent.None, detector.Tick(T0));
 
         detector.SetApiState(new TeamsApiState { Connected = true, HasMeetingState = true, IsInMeeting = true });
@@ -156,7 +156,7 @@ public class CallDetectorTests
     public void Microphone_usage_alone_starts_after_debounce()
     {
         var detector = new CallDetector();
-        detector.SetTeamsRunning(true);
+        detector.SetAppRunning(true);
         detector.SetMicInUse(true);
         Assert.Equal(CallEvent.None, detector.Tick(T0));
         Assert.Equal(CallEvent.None, detector.Tick(T0.AddSeconds(1)));
@@ -167,7 +167,7 @@ public class CallDetectorTests
     public void Short_microphone_blip_does_not_start_a_recording()
     {
         var detector = new CallDetector();
-        detector.SetTeamsRunning(true);
+        detector.SetAppRunning(true);
         detector.SetMicInUse(true);
         detector.Tick(T0);
         detector.SetMicInUse(false);
@@ -180,7 +180,7 @@ public class CallDetectorTests
     public void Short_signal_loss_does_not_split_the_call()
     {
         var detector = new CallDetector();
-        detector.SetTeamsRunning(true);
+        detector.SetAppRunning(true);
         detector.SetMicInUse(true);
         detector.Tick(T0);
         Assert.Equal(CallEvent.Started, detector.Tick(T0.AddSeconds(3)));
@@ -195,7 +195,7 @@ public class CallDetectorTests
     public void Manual_stop_is_respected_until_the_call_ends()
     {
         var detector = new CallDetector();
-        detector.SetTeamsRunning(true);
+        detector.SetAppRunning(true);
         detector.SetMicInUse(true);
         detector.Tick(T0);
         detector.Tick(T0.AddSeconds(3));
@@ -221,10 +221,10 @@ public class CallDetectorTests
     }
 
     [Fact]
-    public void Nothing_happens_when_Teams_is_closed()
+    public void Nothing_happens_when_the_app_is_closed()
     {
         var detector = new CallDetector();
-        detector.SetTeamsRunning(false);
+        detector.SetAppRunning(false);
         detector.SetMicInUse(true);
         detector.Tick(T0);
         Assert.Equal(CallEvent.None, detector.Tick(T0.AddSeconds(10)));
@@ -246,7 +246,7 @@ public class MuteResolverTests
     public void Unpaired_api_is_not_trusted_for_mute()
     {
         var decision = MuteResolver.Resolve(PairedMuted, apiPaired: false, windowMuted: false, recordWhenUnknown: false);
-        Assert.Equal(new MuteDecision(false, MuteSource.TeamsWindow), decision);
+        Assert.Equal(new MuteDecision(false, MuteSource.AppWindow), decision);
     }
 
     [Theory]

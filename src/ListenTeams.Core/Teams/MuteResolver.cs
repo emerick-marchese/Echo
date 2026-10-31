@@ -2,8 +2,12 @@ namespace ListenTeams.Core.Teams;
 
 public enum MuteSource
 {
+    /// <summary>Teams local API (exact, pushed instantly).</summary>
     TeamsApi,
-    TeamsWindow,
+
+    /// <summary>Microphone button read in the application window (Teams fallback, Discord).</summary>
+    AppWindow,
+
     Unknown,
 }
 
@@ -11,13 +15,13 @@ public readonly record struct MuteDecision(bool Muted, MuteSource Source);
 
 /// <summary>
 /// Decides whether the microphone must be silenced in the recording, i.e. whether the
-/// user is muted <em>in Teams</em>.
+/// user is muted <em>in the calling application</em> (Teams, Discord).
 /// </summary>
 public static class MuteResolver
 {
     /// <param name="api">State from the Teams local API.</param>
     /// <param name="apiPaired">We hold a token Teams gave us after the user allowed ListenTeams.</param>
-    /// <param name="windowMuted">State read from the Teams call window (UI Automation), if found.</param>
+    /// <param name="windowMuted">State read from the application window (UI Automation), if found.</param>
     /// <param name="recordWhenUnknown">What to do when nothing tells us the mute state.</param>
     public static MuteDecision Resolve(TeamsApiState api, bool apiPaired, bool? windowMuted, bool recordWhenUnknown)
     {
@@ -28,7 +32,7 @@ public static class MuteResolver
 
         if (windowMuted is { } muted)
         {
-            return new MuteDecision(muted, MuteSource.TeamsWindow);
+            return new MuteDecision(muted, MuteSource.AppWindow);
         }
 
         return new MuteDecision(!recordWhenUnknown, MuteSource.Unknown);

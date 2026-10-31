@@ -64,7 +64,7 @@ public static class ReportWriter
             <body>
             <header>
             <h1>{{title}}</h1>
-            <div class="meta">{{metadata.StartedAt.ToString("dddd d MMMM yyyy, HH:mm", French)}} · {{FormatDuration(metadata.Duration)}}</div>
+            <div class="meta">{{WebUtility.HtmlEncode(metadata.App)}} · {{metadata.StartedAt.ToString("dddd d MMMM yyyy, HH:mm", French)}} · {{FormatDuration(metadata.Duration)}}</div>
             <audio id="audio" controls preload="metadata" src="{{CallFolder.AudioFileName}}"></audio>
             </header>
             <main>

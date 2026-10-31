@@ -14,9 +14,10 @@ public enum CallStatus
 
 public sealed class CallMetadata
 {
-    public const string DefaultTitle = "Appel Teams";
+    /// <summary>Calling application ("Teams", "Discord").</summary>
+    public string App { get; set; } = "Teams";
 
-    public string Title { get; set; } = DefaultTitle;
+    public string Title { get; set; } = DefaultTitleFor("Teams");
 
     public DateTime StartedAt { get; set; }
 
@@ -37,6 +38,12 @@ public sealed class CallMetadata
 
     [JsonIgnore]
     public TimeSpan Duration => TimeSpan.FromSeconds(DurationSeconds);
+
+    /// <summary>True while no real title is known (not from the app window nor the summary).</summary>
+    [JsonIgnore]
+    public bool HasDefaultTitle => Title == DefaultTitleFor(App);
+
+    public static string DefaultTitleFor(string app) => $"Appel {app}";
 }
 
 /// <summary>One folder per call, e.g. "Documents\ListenTeams\2026-10-30 14h05 - Point hebdo".</summary>

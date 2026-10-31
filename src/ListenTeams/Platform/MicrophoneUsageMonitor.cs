@@ -1,38 +1,36 @@
+using ListenTeams.Core.Apps;
 using Microsoft.Win32;
 
 namespace ListenTeams.Platform;
 
 /// <summary>
 /// Reads the Windows privacy "capability access" store, which tracks which applications
-/// currently use the microphone. Teams keeps the microphone open for the whole call (even
-/// when muted, to warn "you are muted"), so this is a reliable call indicator that needs no
-/// Teams configuration.
+/// currently use the microphone. Teams and Discord keep the microphone open for the whole
+/// call (even when muted), so this is a reliable call indicator that needs no configuration.
 /// </summary>
 internal static class MicrophoneUsageMonitor
 {
     private const string ConsentStore = @"Software\Microsoft\Windows\CurrentVersion\CapabilityAccessManager\ConsentStore\microphone";
 
-    public static bool IsTeamsUsingMicrophone()
+    public static bool IsUsingMicrophone(CallApp app)
     {
         try
         {
             using var root = Registry.CurrentUser.OpenSubKey(ConsentStore);
             if (root is null) return false;
 
-            // New Teams is a packaged app: "MSTeams_8wekyb3d8bbwe".
+            // Packaged apps (new Teams): "MSTeams_8wekyb3d8bbwe".
             foreach (var name in root.GetSubKeyNames())
             {
-                if (name.StartsWith("MSTeams_", StringComparison.OrdinalIgnoreCase) && IsInUse(root, name)) return true;
+                if (CallApps.MatchesConsentKey(app, name, packaged: true) && IsInUse(root, name)) return true;
             }
 
-            // Classic Teams: "NonPackaged\C:#Users#…#Teams.exe".
+            // Desktop apps: "NonPackaged\C:#Users#…#Discord#app-1.0.9#Discord.exe".
             using var nonPackaged = root.OpenSubKey("NonPackaged");
             if (nonPackaged is null) return false;
             foreach (var name in nonPackaged.GetSubKeyNames())
             {
-                bool isTeams = name.EndsWith("#ms-teams.exe", StringComparison.OrdinalIgnoreCase)
-                               || name.EndsWith("#teams.exe", StringComparison.OrdinalIgnoreCase);
-                if (isTeams && IsInUse(nonPackaged, name)) return true;
+                if (CallApps.MatchesConsentKey(app, name, packaged: false) && IsInUse(nonPackaged, name)) return true;
             }
         }
         catch (Exception ex) when (ex is System.Security.SecurityException or UnauthorizedAccessException or IOException)

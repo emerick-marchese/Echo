@@ -59,10 +59,10 @@ public sealed class CallProcessor
                 metadata.SummaryProvider = summarizer.DisplayName;
                 try
                 {
-                    var request = new SummaryRequest(metadata.Title, metadata.StartedAt, metadata.Duration, transcript, options.MyName, options.OthersName);
+                    var request = new SummaryRequest(metadata.App, metadata.Title, metadata.StartedAt, metadata.Duration, transcript, options.MyName, options.OthersName);
                     summary = await summarizer.SummarizeAsync(request, cancellationToken).ConfigureAwait(false);
                     await File.WriteAllTextAsync(folder.SummaryPath, summary, cancellationToken).ConfigureAwait(false);
-                    if (metadata.Title == CallMetadata.DefaultTitle && TitleFromSummary(summary) is { } title)
+                    if (metadata.HasDefaultTitle && TitleFromSummary(summary) is { } title)
                     {
                         metadata.Title = title;
                         renameWith = title;
@@ -86,7 +86,7 @@ public sealed class CallProcessor
             metadata.Error = summaryError;
             folder.WriteMetadata(metadata);
 
-            // No title from the Teams window: name the folder after the summary title.
+            // No title from the app window: name the folder after the summary title.
             if (renameWith is not null) folder.RenameWithTitle(renameWith);
             return new ProcessingResult(folder, metadata, summaryError);
         }

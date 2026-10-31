@@ -1,35 +1,40 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using ListenTeams.Core.Apps;
 
 namespace ListenTeams.Platform;
 
-/// <summary>Finds the Teams processes (new Teams "ms-teams.exe", classic "Teams.exe") and their windows.</summary>
-internal static class TeamsProcesses
+/// <summary>Finds the processes of the calling applications (Teams, Discord) and their windows.</summary>
+internal static class AppProcesses
 {
-    private static readonly string[] ExecutableNames = ["ms-teams.exe", "teams.exe"];
-
-    /// <summary>
-    /// Top-most Teams processes. Capturing their process tree also captures the WebView2
-    /// child processes that actually play the call audio.
-    /// </summary>
-    public static IReadOnlyList<int> FindRootProcessIds()
+    /// <summary>One snapshot of the running processes, shared by every lookup of a tick.</summary>
+    public sealed class Snapshot
     {
-        var all = Snapshot();
-        var teams = all.Where(p => ExecutableNames.Contains(p.Name, StringComparer.OrdinalIgnoreCase))
-                       .ToDictionary(p => p.Id);
-        return teams.Values
-            .Where(p => !teams.ContainsKey(p.ParentId))
-            .Select(p => p.Id)
-            .ToList();
+        private readonly List<ProcessInfo> _processes;
+
+        private Snapshot(List<ProcessInfo> processes)
+        {
+            _processes = processes;
+        }
+
+        public static Snapshot Take() => new(TakeProcesses());
+
+        /// <summary>
+        /// Top-most processes of the application. Capturing their process tree also captures
+        /// the child processes that actually play the call audio (WebView2, Electron…).
+        /// </summary>
+        public IReadOnlyList<int> RootProcessIds(CallApp app)
+        {
+            var own = _processes.Where(p => CallApps.IsExecutableOf(app, p.Name)).ToDictionary(p => p.Id);
+            return own.Values.Where(p => !own.ContainsKey(p.ParentId)).Select(p => p.Id).ToList();
+        }
+
+        /// <summary>Process ids of every executable of the application (root and children).</summary>
+        public HashSet<int> AllProcessIds(CallApp app) =>
+            _processes.Where(p => CallApps.IsExecutableOf(app, p.Name)).Select(p => p.Id).ToHashSet();
     }
 
-    /// <summary>Process ids of every Teams executable (root and children).</summary>
-    public static HashSet<int> FindAllProcessIds() =>
-        Snapshot().Where(p => ExecutableNames.Contains(p.Name, StringComparer.OrdinalIgnoreCase))
-                  .Select(p => p.Id)
-                  .ToHashSet();
-
-    /// <summary>Visible top-level windows that belong to Teams processes.</summary>
+    /// <summary>Visible top-level windows that belong to the given processes.</summary>
     public static List<(IntPtr Handle, string Title)> FindWindows(HashSet<int> processIds)
     {
         var windows = new List<(IntPtr, string)>();
@@ -50,7 +55,7 @@ internal static class TeamsProcesses
 
     private readonly record struct ProcessInfo(int Id, int ParentId, string Name);
 
-    private static List<ProcessInfo> Snapshot()
+    private static List<ProcessInfo> TakeProcesses()
     {
         var result = new List<ProcessInfo>();
         IntPtr snapshot = CreateToolhelp32Snapshot(Th32csSnapProcess, 0);
@@ -143,7 +148,7 @@ internal sealed class MeetingTitleTracker
     {
         _windowsBeforeCall.Clear();
         Title = null;
-        foreach (var (handle, _) in TeamsProcesses.FindWindows(teamsProcessIds))
+        foreach (var (handle, _) in AppProcesses.FindWindows(teamsProcessIds))
         {
             _windowsBeforeCall.Add(handle);
         }
@@ -151,7 +156,7 @@ internal sealed class MeetingTitleTracker
 
     public void Update(HashSet<int> teamsProcessIds)
     {
-        var windows = TeamsProcesses.FindWindows(teamsProcessIds);
+        var windows = AppProcesses.FindWindows(teamsProcessIds);
         // Prefer windows opened by the call; fall back to any meaningful title.
         var candidates = windows.Where(w => !_windowsBeforeCall.Contains(w.Handle))
                                 .Concat(windows.Where(w => _windowsBeforeCall.Contains(w.Handle)));

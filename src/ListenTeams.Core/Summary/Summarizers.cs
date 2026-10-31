@@ -6,6 +6,7 @@ using System.Text.Json.Serialization;
 namespace ListenTeams.Core.Summary;
 
 public sealed record SummaryRequest(
+    string App,
     string Title,
     DateTime StartedAt,
     TimeSpan Duration,
@@ -28,7 +29,7 @@ public static class SummaryPrompt
 {
     public static string System(SummaryRequest request) =>
         $"""
-        Tu rédiges des comptes rendus d'appels Microsoft Teams clairs, fidèles et directement exploitables.
+        Tu rédiges des comptes rendus d'appels {request.App} clairs, fidèles et directement exploitables.
         Tu travailles à partir d'une transcription automatique : elle peut contenir des erreurs de reconnaissance (noms propres, termes techniques, chiffres). Corrige-les quand le contexte rend la bonne forme évidente, sans rien inventer.
         Chaque intervention est attribuée à « {request.MyName} » (la personne qui a enregistré l'appel) ou à « {request.OthersName} » (les autres participants, non distingués entre eux). Quand la conversation permet d'identifier une personne par son nom, utilise ce nom.
         N'ajoute aucune information absente de la transcription. Rédige dans la langue majoritaire de la transcription.

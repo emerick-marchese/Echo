@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using ListenTeams.Core.Apps;
 
 namespace ListenTeams.Core.Settings;
 
@@ -19,6 +20,12 @@ public sealed class AppSettings
 {
     public static string DefaultOutputFolder =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "ListenTeams");
+
+    /// <summary>Record Microsoft Teams calls.</summary>
+    public bool RecordTeams { get; set; } = true;
+
+    /// <summary>Record Discord voice calls.</summary>
+    public bool RecordDiscord { get; set; } = true;
 
     /// <summary>Folder where every call gets its own sub-folder.</summary>
     public string OutputFolder { get; set; } = DefaultOutputFolder;
@@ -59,7 +66,7 @@ public sealed class AppSettings
     /// <summary>Ask Windows to remove the loudspeaker echo from the microphone.</summary>
     public bool EchoCancellation { get; set; } = true;
 
-    /// <summary>When the Teams mute state cannot be determined: record the microphone anyway?</summary>
+    /// <summary>When the mute state in Teams/Discord cannot be determined: record the microphone anyway?</summary>
     public bool RecordMicWhenMuteUnknown { get; set; }
 
     /// <summary>How far back a mute change is applied, to cover the delay before Teams reports it.</summary>
@@ -71,6 +78,19 @@ public sealed class AppSettings
     public bool PairingRequestedOnce { get; set; }
 
     public bool NotifyOnCallStart { get; set; } = true;
+
+    public bool IsEnabled(CallApp app) => app switch
+    {
+        CallApp.Teams => RecordTeams,
+        CallApp.Discord => RecordDiscord,
+        _ => false,
+    };
+
+    public void SetEnabled(CallApp app, bool enabled)
+    {
+        if (app == CallApp.Teams) RecordTeams = enabled;
+        else if (app == CallApp.Discord) RecordDiscord = enabled;
+    }
 }
 
 /// <summary>Encrypts secrets at rest (DPAPI on Windows).</summary>

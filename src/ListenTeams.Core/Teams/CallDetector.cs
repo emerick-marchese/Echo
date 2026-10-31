@@ -8,11 +8,11 @@ public enum CallEvent
 }
 
 /// <summary>
-/// Decides when a Teams call starts and ends from several signals:
+/// Decides when a call starts and ends in one calling application, from several signals:
 /// <list type="bullet">
-/// <item>the Teams local API (authoritative when available);</item>
-/// <item>Windows reporting that Teams is using the microphone (Teams keeps it open for the
-/// whole call, even when muted), which works without any Teams configuration.</item>
+/// <item>the Teams local API (authoritative when available, Teams only);</item>
+/// <item>Windows reporting that the application is using the microphone (Teams and Discord
+/// keep it open for the whole call, even when muted), which needs no configuration.</item>
 /// </list>
 /// Signals are debounced so a short glitch neither starts nor splits a recording.
 /// </summary>
@@ -21,7 +21,7 @@ public sealed class CallDetector
     private readonly TimeSpan _micOnlyStartDelay;
     private readonly TimeSpan _endDelay;
 
-    private bool _teamsRunning;
+    private bool _appRunning;
     private TeamsApiState _api = TeamsApiState.Disconnected;
     private bool _micInUse;
     private DateTime? _rawSince;
@@ -41,11 +41,11 @@ public sealed class CallDetector
     /// <summary>True when the current recording was started by hand.</summary>
     public bool IsManual => IsRecording && _manualRecording;
 
-    public bool TeamsRunning => _teamsRunning;
+    public bool AppRunning => _appRunning;
 
     public bool CallInProgress => _rawInCall;
 
-    public void SetTeamsRunning(bool running) => _teamsRunning = running;
+    public void SetAppRunning(bool running) => _appRunning = running;
 
     public void SetApiState(TeamsApiState state) => _api = state;
 
@@ -75,7 +75,7 @@ public sealed class CallDetector
     public CallEvent Tick(DateTime now)
     {
         bool apiSaysCall = _api.SuggestsMeeting;
-        bool raw = _teamsRunning && (apiSaysCall || _micInUse);
+        bool raw = _appRunning && (apiSaysCall || _micInUse);
         if (raw != _rawInCall)
         {
             _rawInCall = raw;
