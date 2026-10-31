@@ -4,9 +4,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Version>1.0.0</Version>
-    <Product>ListenTeams</Product>
-    <Company>ListenTeams</Company>
-    <Copyright>ListenTeams</Copyright>
+    <Product>Echo</Product>
+    <Company>Echo</Company>
+    <Copyright>Echo</Copyright>
     <NeutralLanguage>fr-FR</NeutralLanguage>
     <!-- Line numbers in logged stack traces without shipping separate .pdb files. -->
     <DebugType>embedded</DebugType>

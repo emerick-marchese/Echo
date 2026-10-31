@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- UI Automation (reading the Teams microphone button) lives in the WPF assemblies. -->
+    <UseWPF>true</UseWPF>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <RootNamespace>Echo</RootNamespace>
+    <AssemblyName>Echo</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>..\..\assets\echo.ico</ApplicationIcon>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <SatelliteResourceLanguages>fr;en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <PackageReference Include="NAudio.Wasapi" Version="3.3.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.14" />
+    <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
+    <PackageReference Include="Whisper.net.Runtime.Vulkan" Version="1.9.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- UseWPF removes System.IO from the implicit usings. -->
+    <Using Include="System.IO" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Echo.Core\Echo.Core.csproj" />
+  </ItemGroup>
+
+  <!-- The interface (HTML/CSS/JS) shown in the WebView2 window. -->
+  <ItemGroup>
+    <None Remove="ui\**" />
+    <Content Include="ui\**" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\assets\echo.ico" LogicalName="echo.ico" />
+  </ItemGroup>
+
+  <!-- Whisper.net ships native libraries for every platform: keep only Windows x64 (CPU + Vulkan GPU). -->
+  <Target Name="RemoveForeignWhisperRuntimes" AfterTargets="Publish">
+    <RemoveDir Directories="$(PublishDir)runtimes\win-x86;$(PublishDir)runtimes\win-arm64;$(PublishDir)runtimes\linux-x64;$(PublishDir)runtimes\linux-arm64;$(PublishDir)runtimes\vulkan\linux-x64;$(PublishDir)runtimes\vulkan\linux-arm64;$(PublishDir)runtimes\vulkan\win-arm64" />
+  </Target>
+
+</Project>

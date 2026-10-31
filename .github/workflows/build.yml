@@ -46,11 +46,11 @@ jobs:
           "publish=$publish" >> $env:GITHUB_OUTPUT
 
       - name: Tests
-        run: dotnet test tests/ListenTeams.Tests -c Release
+        run: dotnet test tests/Echo.Tests -c Release
 
       - name: Publish (self-contained, no .NET install needed)
         run: >-
-          dotnet publish src/ListenTeams/ListenTeams.csproj -c Release -r win-x64 --self-contained true
+          dotnet publish src/Echo/Echo.csproj -c Release -r win-x64 --self-contained true
           -p:Version=${{ steps.version.outputs.version }} -o publish
 
       - name: Install Inno Setup
@@ -59,16 +59,16 @@ jobs:
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y }
 
-      - name: Build ListenTeams-Setup.exe
+      - name: Build Echo-Setup.exe
         shell: pwsh
         run: |
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.version.outputs.version }}" installer\ListenTeams.iss
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.version.outputs.version }}" installer\Echo.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - uses: actions/upload-artifact@v7
         with:
-          name: ListenTeams-Setup-${{ steps.version.outputs.version }}
-          path: installer/Output/ListenTeams-Setup.exe
+          name: Echo-Setup-${{ steps.version.outputs.version }}
+          path: installer/Output/Echo-Setup.exe
           if-no-files-found: error
 
       # On a v* tag, or when run by hand with a version: creates the tag and the Release.
@@ -78,14 +78,14 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: ListenTeams ${{ steps.version.outputs.version }}
-          files: installer/Output/ListenTeams-Setup.exe
+          name: Echo ${{ steps.version.outputs.version }}
+          files: installer/Output/Echo-Setup.exe
           generate_release_notes: true
           body: |
-            ## Installation
-            1. Téléchargez **ListenTeams-Setup.exe** ci-dessous et lancez-le (aucun droit administrateur nécessaire, rien d'autre à installer).
-            2. Choisissez les appels à enregistrer : **Teams**, **Discord** ou les deux (modifiable ensuite : clic droit sur l'icône → Applications à enregistrer).
-            3. Teams : Paramètres → Confidentialité → Gérer l'API → **Activer l'API**, puis acceptez la demande de ListenTeams pendant votre premier appel. Discord : rien à configurer (gardez la fenêtre Discord ouverte pendant l'appel).
-            4. Dans ListenTeams (icône près de l'horloge) → Paramètres → Synthèse : collez votre clé API Anthropic, ou choisissez Ollama (100 % local).
+            ## Echo — enregistrez vos appels Teams et Discord
+            1. Téléchargez **Echo-Setup.exe** ci-dessous et lancez-le (aucun droit administrateur nécessaire, rien d'autre à installer ; remplace ListenTeams si vous l'aviez).
+            2. Ouvrez Echo, choisissez **Teams** ou **Discord**, puis cliquez sur **Démarrer l'enregistrement**. Seuls le son de l'application et votre micro (quand il est actif dans l'application) sont enregistrés.
+            3. Paramètres → Synthèse : collez votre clé API Anthropic, ou choisissez Ollama (100 % local).
+            4. Teams (recommandé) : Paramètres → Confidentialité → Gérer l'API → **Activer l'API**, puis acceptez la demande d'Echo pendant un appel. Discord : rien à configurer.
 
             Windows 10 version 2004 ou plus récent / Windows 11, 64 bits, applications de bureau Teams et/ou Discord.
