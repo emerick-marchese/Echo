@@ -19,6 +19,10 @@ jobs:
   windows:
     name: Tests, app and installer
     runs-on: windows-latest
+    env:
+      # Code signing by SignPath Foundation (free for open source): active once the
+      # SIGNPATH_API_TOKEN secret and SIGNPATH_ORGANIZATION_ID variable are set.
+      SIGNPATH_READY: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
     steps:
       - uses: actions/checkout@v6
 
@@ -44,6 +48,9 @@ jobs:
           }
           "version=$version" >> $env:GITHUB_OUTPUT
           "publish=$publish" >> $env:GITHUB_OUTPUT
+          # Only releases are signed: each signature is approved by hand in SignPath.
+          $sign = if ($publish -eq "true" -and $env:SIGNPATH_READY -eq "true") { "true" } else { "false" }
+          "sign=$sign" >> $env:GITHUB_OUTPUT
 
       - name: Tests
         run: dotnet test tests/Echo.Tests -c Release
@@ -52,6 +59,38 @@ jobs:
         run: >-
           dotnet publish src/Echo/Echo.csproj -c Release -r win-x64 --self-contained true
           -p:Version=${{ steps.version.outputs.version }} -o publish
+
+      # ---- Signing of Echo's own programs (before they go into the installer) ----
+      - name: Upload Echo binaries to sign
+        id: unsigned-binaries
+        if: steps.version.outputs.sign == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: echo-binaries-unsigned
+          path: |
+            publish/Echo.exe
+            publish/Echo.dll
+            publish/Echo.Core.dll
+          if-no-files-found: error
+
+      - name: Sign Echo binaries (SignPath)
+        if: steps.version.outputs.sign == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'Echo' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
+          artifact-configuration-slug: binaries
+          github-artifact-id: ${{ steps.unsigned-binaries.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-binaries
+
+      - name: Use the signed binaries
+        if: steps.version.outputs.sign == 'true'
+        shell: pwsh
+        run: Copy-Item signed-binaries\* publish\ -Force
 
       - name: Install Inno Setup
         shell: pwsh
@@ -64,6 +103,35 @@ jobs:
         run: |
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.version.outputs.version }}" installer\Echo.iss
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # ---- Signing of the installer (what people download) ----
+      - name: Upload installer to sign
+        id: unsigned-installer
+        if: steps.version.outputs.sign == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: echo-setup-unsigned
+          path: installer/Output/Echo-Setup.exe
+          if-no-files-found: error
+
+      - name: Sign installer (SignPath)
+        if: steps.version.outputs.sign == 'true'
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'Echo' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
+          artifact-configuration-slug: installer
+          github-artifact-id: ${{ steps.unsigned-installer.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed-installer
+
+      - name: Use the signed installer
+        if: steps.version.outputs.sign == 'true'
+        shell: pwsh
+        run: Copy-Item signed-installer\Echo-Setup.exe installer\Output\Echo-Setup.exe -Force
 
       - uses: actions/upload-artifact@v7
         with:

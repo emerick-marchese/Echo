@@ -101,7 +101,13 @@ Après l'arrêt
 
 ## Confidentialité et cadre légal
 
-Tout est stocké sur votre PC. Seul le texte de la transcription est envoyé à Anthropic si vous choisissez Claude. **Informez les participants que l'appel est enregistré** : c'est une obligation légale dans la plupart des pays (en France, RGPD et article 226-1 du Code pénal).
+Tout est stocké sur votre PC. Seul le texte de la transcription est envoyé à Anthropic si vous choisissez Claude. **Informez les participants que l'appel est enregistré** : c'est une obligation légale dans la plupart des pays (en France, RGPD et article 226-1 du Code pénal). Détails : [politique de confidentialité](PRIVACY.md).
+
+## Licence et signature du code
+
+Echo est un logiciel libre sous [licence MIT](LICENSE).
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org) — voir la [politique de signature du code](CODE_SIGNING.md) (demande en cours : tant qu'elle n'est pas acceptée, les fichiers publiés ne sont pas signés et Windows peut afficher « Windows a protégé votre ordinateur » : cliquez sur *Informations complémentaires* puis *Exécuter quand même*).
 
 ## Développement
 
