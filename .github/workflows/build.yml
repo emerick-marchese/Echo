@@ -157,3 +157,5 @@ jobs:
             4. Teams (recommandé) : Paramètres → Confidentialité → Gérer l'API → **Activer l'API**, puis acceptez la demande d'Echo pendant un appel. Discord : rien à configurer.
 
             Windows 10 version 2004 ou plus récent / Windows 11, 64 bits, applications de bureau Teams et/ou Discord.
+
+            Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org) — [code signing policy](https://github.com/${{ github.repository }}/blob/HEAD/CODE_SIGNING.md) · [privacy policy](https://github.com/${{ github.repository }}/blob/HEAD/PRIVACY.md).

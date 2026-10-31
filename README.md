@@ -14,7 +14,7 @@ Options : démarrage automatique dès qu'un appel commence, arrêt automatique �
 
 ## Installation
 
-1. Téléchargez **`Echo-Setup.exe`** depuis l'onglet *Releases* du dépôt.
+1. Téléchargez **`Echo-Setup.exe`** depuis l'onglet [*Releases*](../../releases) du dépôt. Code signing: free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org) ([politique de signature](CODE_SIGNING.md)).
 2. Lancez-le : aucun droit administrateur n'est nécessaire et rien d'autre n'est à installer. L'application embarque son environnement .NET. L'installateur télécharge le modèle de transcription choisi et, s'il manque, le composant Microsoft Edge WebView2 qui affiche la fenêtre.
 
    | Modèle | Taille | Pour qui |
