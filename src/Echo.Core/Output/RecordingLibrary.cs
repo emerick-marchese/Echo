@@ -131,6 +131,8 @@ public static partial class TranscriptData
     public static void Write(string path, IEnumerable<TranscriptParagraph> paragraphs)
     {
         var items = paragraphs.Select(p => new Item(p.Start.TotalSeconds, p.End.TotalSeconds, p.Speaker == Speaker.Me ? "me" : "others", p.Text, p.Voice));
+        // Windows refuses to overwrite a hidden file: unhide it first (rewritten when voices are renamed).
+        if (File.Exists(path)) File.SetAttributes(path, File.GetAttributes(path) & ~FileAttributes.Hidden);
         File.WriteAllText(path, JsonSerializer.Serialize(items, Options));
         try
         {
