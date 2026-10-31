@@ -51,6 +51,8 @@ Name: "desktopicon"; Description: "Créer une icône sur le Bureau"; GroupDescri
 Source: "..\publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Speech recognition model downloaded during setup (see [Code]).
 Source: "{tmp}\{code:ModelFile}"; DestDir: "{app}\models"; Flags: external skipifsourcedoesntexist ignoreversion; Check: ModelDownloaded
+; Voice-print model: recognises who speaks (28 MB).
+Source: "{tmp}\{code:VoiceModelFile}"; DestDir: "{app}\models"; Flags: external skipifsourcedoesntexist ignoreversion; Check: VoiceModelDownloaded
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExe}"
@@ -74,11 +76,14 @@ const
   ModelBaseUrl = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/';
   WebView2Url = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703';
   WebView2Setup = 'MicrosoftEdgeWebview2Setup.exe';
+  VoiceModel = '3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx';
+  VoiceModelUrl = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/';
 
 var
   ModelPage: TInputOptionWizardPage;
   DownloadPage: TDownloadWizardPage;
   Downloaded: Boolean;
+  VoiceDownloaded: Boolean;
   WebView2Downloaded: Boolean;
 
 function ModelFileAt(Index: Integer): String;
@@ -100,6 +105,16 @@ end;
 function ModelDownloaded: Boolean;
 begin
   Result := Downloaded;
+end;
+
+function VoiceModelFile(Param: String): String;
+begin
+  Result := VoiceModel;
+end;
+
+function VoiceModelDownloaded: Boolean;
+begin
+  Result := VoiceDownloaded;
 end;
 
 { ---------- ListenTeams (former name) ---------- }
@@ -199,23 +214,27 @@ end;
 function NextButtonClick(CurPageID: Integer): Boolean;
 var
   FileName: String;
-  NeedModel: Boolean;
+  NeedModel, NeedVoice: Boolean;
 begin
   Result := True;
   if CurPageID <> wpReady then
     Exit;
 
   Downloaded := False;
+  VoiceDownloaded := False;
   WebView2Downloaded := False;
   FileName := ModelFile('');
   NeedModel := (FileName <> '') and not FileExists(ExpandConstant('{app}\models\') + FileName) and (LegacyModelPath(FileName) = '');
+  NeedVoice := not FileExists(ExpandConstant('{app}\models\') + VoiceModel);
 
   DownloadPage.Clear;
   if NeedModel then
     DownloadPage.Add(ModelBaseUrl + FileName, FileName, '');
+  if NeedVoice then
+    DownloadPage.Add(VoiceModelUrl + VoiceModel, VoiceModel, '');
   if not WebView2Installed then
     DownloadPage.Add(WebView2Url, WebView2Setup, '');
-  if not NeedModel and WebView2Installed then
+  if not NeedModel and not NeedVoice and WebView2Installed then
     Exit;
 
   DownloadPage.Show;
@@ -223,13 +242,15 @@ begin
     try
       DownloadPage.Download;
       Downloaded := NeedModel;
+      VoiceDownloaded := NeedVoice;
       WebView2Downloaded := not WebView2Installed;
     except
       if not DownloadPage.AbortedByUser then
         SuppressibleMsgBox('Un téléchargement a échoué :' + #13#10 + GetExceptionMessage + #13#10#13#10 +
-          'L''installation continue : le modèle de transcription sera téléchargé par Echo après le premier appel.',
+          'L''installation continue : Echo téléchargera les modèles manquants lui-même.',
           mbInformation, MB_OK, IDOK);
       Downloaded := NeedModel and FileExists(ExpandConstant('{tmp}\') + FileName);
+      VoiceDownloaded := NeedVoice and FileExists(ExpandConstant('{tmp}\') + VoiceModel);
       WebView2Downloaded := FileExists(ExpandConstant('{tmp}\') + WebView2Setup);
     end;
   finally

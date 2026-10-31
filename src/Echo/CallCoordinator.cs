@@ -3,6 +3,7 @@ using Echo.Core;
 using Echo.Core.Apps;
 using Echo.Core.Output;
 using Echo.Core.Settings;
+using Echo.Core.Speakers;
 using Echo.Core.Teams;
 using Echo.Platform;
 
@@ -68,6 +69,9 @@ internal sealed class CallCoordinator : IAsyncDisposable
     private readonly object _muteLock = new();
 
     private volatile CallRecorder? _recorder;
+    private volatile LiveSpeakerMonitor? _speakers;
+    private ISpeakerEmbedder? _embedder;
+    private bool _voiceModelRequested;
     private volatile AppWatch? _active;
     private CallWindowMuteReader? _windowReader;
     private CallFolder? _folder;
@@ -135,6 +139,12 @@ internal sealed class CallCoordinator : IAsyncDisposable
 
     public CoordinatorStatus Status { get; private set; } = new(
         TrayState.Idle, [], null, null, false, null, TeamsApiState.Disconnected, false, null, 0);
+
+    /// <summary>Who is speaking in the current recording (null when not recording or voices are off).</summary>
+    public LiveSpeakers? Speakers => _speakers?.Snapshot();
+
+    /// <summary>Names a voice during the call; the name is kept in the transcript.</summary>
+    public bool RenameLiveSpeaker(int id, string name) => _speakers?.Rename(id, name) ?? false;
 
     /// <summary>Live meter levels of the current recording (0 when not recording).</summary>
     public (float Me, float Others) Levels => _recorder?.Levels ?? (0f, 0f);
@@ -301,8 +311,9 @@ internal sealed class CallCoordinator : IAsyncDisposable
                 _muteSourcesUsed.Add(initialMute.Source);
             }
 
+            _speakers = settings.IdentifyVoices ? CreateSpeakerMonitor() : null;
             var options = new RecorderOptions(settings.OpusBitrate, settings.MicrophoneDeviceId, settings.EchoCancellation, settings.MuteLookBackMs);
-            _recorder = await CallRecorder.StartAsync(_folder.AudioPath, _folder.EnvelopePath, _metadata.Title, options, watch.Roots, initialMute.Muted).ConfigureAwait(false);
+            _recorder = await CallRecorder.StartAsync(_folder.AudioPath, _folder.EnvelopePath, _metadata.Title, options, watch.Roots, initialMute.Muted, _speakers).ConfigureAwait(false);
             _recordingStartedUtc = DateTime.UtcNow;
             Log.Info($"Enregistrement {appName} démarré ({(watch.Detector.IsManual ? "manuel" : "automatique")}) : {_folder.Path}");
 
@@ -334,6 +345,8 @@ internal sealed class CallCoordinator : IAsyncDisposable
             _recorder = null;
             _active = null;
             _recordingStartedUtc = null;
+            _speakers?.Dispose();
+            _speakers = null;
             watch.Detector.StopManually();
             if (_folder is not null)
             {
@@ -477,6 +490,19 @@ internal sealed class CallCoordinator : IAsyncDisposable
 
         var duration = recorder.Elapsed;
         await recorder.DisposeAsync().ConfigureAwait(false);
+        if (_speakers is { } speakers)
+        {
+            _speakers = null;
+            speakers.Dispose();
+            try
+            {
+                LiveSpeakerMonitor.SaveProfiles(folder.SpeakersPath, speakers.Profiles());
+            }
+            catch (IOException ex)
+            {
+                Log.Warn($"Voix non enregistrées : {ex.Message}");
+            }
+        }
 
         string? title = null;
         if (watch?.App == CallApp.Teams)
@@ -513,6 +539,37 @@ internal sealed class CallCoordinator : IAsyncDisposable
             ToolTipIcon.Info,
             folder.Path));
         PublishStatus();
+    }
+
+    /// <summary>
+    /// Live voice recognition, if the voice-print model is there. Otherwise it is downloaded
+    /// in the background for the next calls.
+    /// </summary>
+    private LiveSpeakerMonitor? CreateSpeakerMonitor()
+    {
+        try
+        {
+            if (_embedder is null)
+            {
+                var folders = Core.Transcription.ModelCatalog.SearchFolders(AppPaths.AppFolder, AppPaths.DataFolder);
+                if (SpeakerModel.Resolve(folders) is not { } model)
+                {
+                    if (!_voiceModelRequested)
+                    {
+                        _voiceModelRequested = true;
+                        _ = ProcessingQueue.EnsureVoiceModelAsync(_cts.Token);
+                    }
+                    return null;
+                }
+                _embedder = new SherpaSpeakerEmbedder(model);
+            }
+            return new LiveSpeakerMonitor(_embedder);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Reconnaissance des voix indisponible", ex);
+            return null;
+        }
     }
 
     private string DescribeMuteSources()
@@ -591,6 +648,7 @@ internal sealed class CallCoordinator : IAsyncDisposable
             await StopRecordingCoreAsync().ConfigureAwait(false);
         }
 
+        _embedder?.Dispose();
         await _api.DisposeAsync().ConfigureAwait(false);
         if (_apiLoop is not null)
         {

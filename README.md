@@ -7,7 +7,8 @@
 1. choisissez **Teams** ou **Discord** ;
 2. cliquez sur **Démarrer l'enregistrement** ;
 3. Echo enregistre **uniquement** le son de l'application choisie et **votre micro, seulement quand il est actif dans cette application** : si vous êtes en muet (ou en sourdine dans Discord), votre voix n'est pas enregistrée ;
-4. à l'arrêt, Echo produit le **fichier audio**, la **transcription** (« Moi » / « Participants ») et une **synthèse** (résumé, points clés, décisions, actions, questions ouvertes, déroulé), consultables directement dans l'application.
+4. pendant l'appel, Echo montre **qui parle en temps réel** : vous, et chaque autre participant reconnu à sa voix (« Intervenant 1 », « Intervenant 2 »…, que vous pouvez nommer d'un clic) ;
+5. à l'arrêt, Echo produit le **fichier audio**, la **transcription** (chaque phrase attribuée à vous ou à l'intervenant qui l'a dite) et une **synthèse** (résumé, points clés, décisions, actions, questions ouvertes, déroulé), consultables directement dans l'application.
 
 Options : démarrage automatique dès qu'un appel commence, arrêt automatique à la fin de l'appel, thème sombre ou clair.
 
@@ -30,8 +31,8 @@ Configuration requise : Windows 10 version 2004 ou plus récent / Windows 11, 64
 
 | Écran | Contenu |
 |---|---|
-| **Enregistrer** | Choix Teams / Discord (avec leur état : fermé, ouvert, en appel), gros bouton Démarrer / Arrêter, chronomètre, niveaux sonores en direct (participants / vous), état de votre micro (« Micro actif — enregistré » / « Micro coupé — non enregistré »), options de démarrage et d'arrêt automatiques |
-| **Enregistrements** | Tous vos appels : recherche, filtre Teams / Discord, état du traitement. Pour chaque appel : lecteur audio, synthèse, transcription cliquable (un clic sur un horodatage relance l'audio à ce moment), renommer, relancer la transcription, ouvrir le dossier, supprimer (corbeille) |
+| **Enregistrer** | Choix Teams / Discord (avec leur état : fermé, ouvert, en appel), gros bouton Démarrer / Arrêter, chronomètre, niveaux sonores en direct (participants / vous), état de votre micro (« Micro actif — enregistré » / « Micro coupé — non enregistré »), **qui parle en ce moment** et temps de parole de chacun (cliquez sur une voix pour lui donner un nom), options de démarrage et d'arrêt automatiques |
+| **Enregistrements** | Tous vos appels : recherche, filtre Teams / Discord, état du traitement. Pour chaque appel : lecteur audio, intervenants (renommables, avec « Refaire la synthèse avec ces noms »), synthèse, transcription cliquable (un clic sur un horodatage relance l'audio à ce moment), renommer, relancer la transcription, ouvrir le dossier, supprimer (corbeille) |
 | **Paramètres** | Thème, nom affiché, dossier, démarrage avec Windows, qualité audio, micro, annulation d'écho, modèle et langue de transcription, carte graphique, vocabulaire, moteur de synthèse, connexion à Teams |
 
 Fermer la fenêtre ne coupe pas Echo : il reste près de l'horloge (et continue d'enregistrer si un enregistrement est en cours). Clic droit sur l'icône : ouvrir Echo, démarrer / arrêter l'enregistrement, quitter.
@@ -66,7 +67,7 @@ transcription.txt    [00:01:23] Moi : …
 synthese.md          compte rendu en Markdown
 compte-rendu.html    synthèse + lecteur audio + transcription, lisible dans n'importe quel navigateur
 infos.json           application, date, durée, état du traitement
-appel.env, transcription.json   données internes (niveaux sonores, transcription pour l'application)
+appel.env, transcription.json, voix.json   données internes (niveaux sonores, transcription et voix pour l'application)
 ```
 
 ## Comment ça marche
@@ -87,13 +88,13 @@ Après l'arrêt
 
 - **Son de l'application uniquement** : la capture Windows *par processus* isole Teams ou Discord ; ni la musique, ni les notifications, ni les autres applications.
 - **Micro « tel que l'application l'entend »** : le mixage a une seconde de retard sur le temps réel, ce qui permet d'appliquer chaque passage en muet au bon endroit (avec 250 ms de marge). L'API Teams signale les changements instantanément ; les boutons des fenêtres sont lus 5 fois par seconde.
-- **Qui parle ?** Les niveaux de votre micro (après la porte « muet ») et de l'application sont mémorisés toutes les 50 ms ; chaque phrase est attribuée au côté le plus fort.
+- **Qui parle ?** Votre voix est reconnue par votre micro (après la porte « muet »). Les autres participants sont reconnus à leur **empreinte vocale** (modèle CAM++, 28 Mo, calculé sur le PC) : en direct toutes les 0,4 s sur la dernière 1,6 s de son, puis, après l'appel, phrase par phrase avec un regroupement plus précis. Les noms donnés pendant l'appel sont repris dans la transcription. Ça marche pareil sur Teams et Discord, sans configuration ; deux voix très proches peuvent parfois être confondues.
 - **Transcription fiable** : seuls les passages parlés vont à Whisper (pas de phrases inventées dans les silences) ; GPU (Vulkan) si disponible.
 - **Robuste** : l'audio est écrit au fil de l'eau ; si le PC s'éteint pendant un appel, l'enregistrement est conservé et traité au démarrage suivant. Les enregistrements de moins de 8 secondes sont ignorés.
 
 ## Limites connues
 
-- Un seul appel est enregistré à la fois ; les autres participants sont regroupés sous « Participants » (la synthèse utilise leurs noms quand ils sont prononcés).
+- Un seul appel est enregistré à la fois. Les intervenants sont reconnus à la voix, pas par leur compte Teams / Discord : leurs vrais noms ne sont connus que si vous les donnez (ou si la synthèse les déduit de la conversation).
 - Un **casque** donne le meilleur résultat ; sans casque, l'annulation d'écho de Windows retire le son des haut-parleurs si le matériel la prend en charge.
 - Teams et Discord dans le navigateur ne sont pas pris en charge.
 - La transcription d'une heure prend de quelques minutes (GPU) à environ une heure (processeur seul, modèle « Précis ») ; elle tourne en arrière-plan.

@@ -31,7 +31,7 @@ public static class SummaryPrompt
         $"""
         Tu rédiges des comptes rendus d'appels {request.App} clairs, fidèles et directement exploitables.
         Tu travailles à partir d'une transcription automatique : elle peut contenir des erreurs de reconnaissance (noms propres, termes techniques, chiffres). Corrige-les quand le contexte rend la bonne forme évidente, sans rien inventer.
-        Chaque intervention est attribuée à « {request.MyName} » (la personne qui a enregistré l'appel) ou à « {request.OthersName} » (les autres participants, non distingués entre eux). Quand la conversation permet d'identifier une personne par son nom, utilise ce nom.
+        Chaque intervention est attribuée à « {request.MyName} » (la personne qui a enregistré l'appel) ou à l'un des autres participants, reconnus à leur voix : « Intervenant 1 », « Intervenant 2 »… (ou le nom que l'utilisateur leur a donné), et « {request.OthersName} » quand la voix n'a pas pu être identifiée. La reconnaissance des voix peut parfois se tromper. Quand la conversation permet de savoir qui est un « Intervenant », utilise son vrai nom.
         N'ajoute aucune information absente de la transcription. Rédige dans la langue majoritaire de la transcription.
         """;
 

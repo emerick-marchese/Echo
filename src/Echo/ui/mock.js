@@ -26,7 +26,7 @@ export function createMockBridge() {
     theme: state.theme, myName: 'Moi', othersName: 'Participants',
     outputFolder: 'C:\\Users\\Emerick\\Documents\\Echo', startWithWindows: true, notifyOnStart: true,
     opusBitrate: 24000, microphoneId: '', echoCancellation: true, recordMicWhenUnknown: false,
-    whisperModel: '', language: 'fr', useGpu: true, vocabulary: 'Echo, Kubernetes, RGPD',
+    whisperModel: '', language: 'fr', useGpu: true, identifyVoices: true, vocabulary: 'Echo, Kubernetes, RGPD',
     summaryProvider: 'claude', hasApiKey: true, claudeModel: 'claude-opus-5-5',
     ollamaUrl: 'http://localhost:11434', ollamaModel: 'mistral-nemo',
   };
@@ -48,11 +48,18 @@ export function createMockBridge() {
 <h2>Décisions</h2><ul><li>Lancement maintenu au 14 novembre.</li><li>Budget marketing de 12 k€ validé.</li></ul>
 <h2>Actions à mener</h2><table><thead><tr><th>Action</th><th>Responsable</th><th>Échéance</th></tr></thead><tbody><tr><td>Finaliser la documentation</td><td>Sarah</td><td>8 novembre</td></tr><tr><td>Script de migration des comptes</td><td>Moi</td><td>10 novembre</td></tr></tbody></table>
 <h2>Déroulé</h2><ul><li><button class="t" data-t="12">[00:00:12]</button> Tour de table</li><li><button class="t" data-t="245">[00:04:05]</button> Résultats des tests de charge</li><li><button class="t" data-t="1260">[00:21:00]</button> Budget marketing</li></ul>`,
+    voices: [
+      { voice: 1, name: 'Thomas', talk: 1140 },
+      { voice: 2, name: 'Sarah', talk: 760 },
+      { voice: 3, name: 'Intervenant 3', talk: 95 },
+    ],
+    meTalk: 540,
     paragraphs: [
-      { start: 12, end: 40, speaker: 'others', text: 'Bonjour à tous, on commence par un rapide tour de table sur le lancement.' },
-      { start: 41, end: 75, speaker: 'me', text: 'De mon côté, le script de migration est presque prêt, il me reste les comptes avec plusieurs espaces de travail.' },
-      { start: 76, end: 120, speaker: 'others', text: 'Parfait. Sarah, tu peux nous dire où en est la documentation ?' },
-      { start: 245, end: 300, speaker: 'others', text: 'Les tests de charge sont bons : trois mille utilisateurs simultanés, aucune dégradation des temps de réponse.' },
+      { start: 12, end: 40, speaker: 'others', voice: 1, name: 'Thomas', text: 'Bonjour à tous, on commence par un rapide tour de table sur le lancement.' },
+      { start: 41, end: 75, speaker: 'me', voice: 0, name: 'Moi', text: 'De mon côté, le script de migration est presque prêt, il me reste les comptes avec plusieurs espaces de travail.' },
+      { start: 76, end: 120, speaker: 'others', voice: 1, name: 'Thomas', text: 'Parfait. Sarah, tu peux nous dire où en est la documentation ?' },
+      { start: 121, end: 170, speaker: 'others', voice: 2, name: 'Sarah', text: 'Elle sera prête pour le 8 novembre, il me manque juste la partie migration.' },
+      { start: 245, end: 300, speaker: 'others', voice: 3, name: 'Intervenant 3', text: 'Les tests de charge sont bons : trois mille utilisateurs simultanés, aucune dégradation des temps de réponse.' },
     ],
     audioUrl: '',
     hasReport: true,
@@ -60,6 +67,11 @@ export function createMockBridge() {
     othersName: 'Participants',
   };
 
+  const live = { meSpeaking: false, meTalk: 212, current: 2, list: [
+    { id: 1, name: 'Thomas', speaking: false, talk: 301 },
+    { id: 2, name: 'Intervenant 2', speaking: true, talk: 188 },
+    { id: 3, name: 'Intervenant 3', speaking: false, talk: 41 },
+  ] };
   function tick() {
     if (!state.recording) return;
     const t = performance.now() / 1000;
@@ -68,13 +80,16 @@ export function createMockBridge() {
       others: Math.abs(Math.sin(t * 2.1)) * 0.35 + Math.random() * 0.08,
       me: state.recording.muted ? 0 : Math.abs(Math.sin(t * 1.3 + 1)) * 0.25 * (Math.random() > 0.4 ? 1 : 0.05),
     };
+    const who = Math.floor(t / 3) % 3;
+    live.list.forEach((s, i) => { s.speaking = i === who; if (s.speaking) s.talk += 0.25; });
+    state.recording.speakers = structuredClone(live);
     emit('state', structuredClone(state));
   }
   setInterval(tick, 250);
 
   if (params.get('recording')) {
     startedAt = Date.now() - 754e3;
-    state.recording = { app: state.selectedApp, elapsed: 754, manual: true, muted: params.get('muted') === '1', muteSource: 'window', levels: { me: 0.2, others: 0.3 } };
+    state.recording = { app: state.selectedApp, elapsed: 754, manual: true, muted: params.get('muted') === '1', muteSource: 'window', levels: { me: 0.2, others: 0.3 }, speakers: structuredClone(live) };
     state.state = 'recording';
   }
 
@@ -102,6 +117,9 @@ export function createMockBridge() {
     'recordings.list': () => structuredClone(recordings),
     'recordings.get': ({ id }) => ({ ...structuredClone(detail), summary: structuredClone(recordings.find(r => r.id === id) ?? recordings[1]) }),
     'recordings.rename': () => true,
+    'recordings.renameVoice': ({ voice, name }) => { const v = detail.voices.find(x => x.voice === voice); if (v) v.name = name; detail.paragraphs.forEach(p => { if (p.voice === voice) p.name = name; }); return true; },
+    'recordings.resummarize': () => true,
+    'speakers.renameLive': ({ id, name }) => { const s = live.list.find(x => x.id === id); if (s) s.name = name; return true; },
     'recordings.reprocess': () => true,
     'recordings.delete': () => true,
     'recordings.openFolder': () => {},

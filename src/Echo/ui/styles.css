@@ -209,6 +209,36 @@ svg.icon { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: no
 .chip.accent { color: var(--accent); background: rgba(124, 92, 255, .1); border-color: rgba(124, 92, 255, .25); }
 .rec-chips { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 18px; }
 
+/* ---------- Speakers ---------- */
+.speakers { width: 100%; max-width: 640px; margin-top: 22px; }
+.speakers:empty { display: none; }
+.speakers-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+.speakers-head .now { display: inline-flex; align-items: center; gap: 8px; color: var(--text); font-size: 15px; }
+.speaker-grid { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.speaker-grid.left { justify-content: flex-start; }
+.speaker {
+  display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; border-radius: 999px;
+  background: var(--surface-2); border: 1px solid var(--border); text-align: left;
+  transition: border-color .2s, box-shadow .2s, background .2s;
+}
+.speaker.renamable { cursor: pointer; }
+.speaker.renamable:hover { background: var(--surface-3); }
+.speaker .avatar {
+  position: relative; width: 32px; height: 32px; border-radius: 50%; flex: none;
+  display: grid; place-items: center; font-weight: 700; font-size: 13px; color: #10121a; background: var(--c);
+}
+.speaker.speaking { border-color: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent); }
+.speaker.speaking .avatar::after {
+  content: ""; position: absolute; inset: -5px; border-radius: 50%; border: 2px solid var(--c); animation: pulse 1.3s ease-out infinite;
+}
+.speaker .sinfo { display: flex; flex-direction: column; line-height: 1.2; }
+.speaker .sname { font-weight: 600; }
+.speaker .stalk { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.speaker-input { width: 150px; border: 1px solid var(--c); border-radius: 6px; background: var(--surface); padding: 2px 6px; outline: none; user-select: text; }
+.voices { margin-bottom: 18px; }
+.voices-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.voices-head .hint { color: var(--muted); font-size: 13px; }
+
 .options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-top: 14px; }
 .option { display: flex; align-items: center; gap: 14px; padding: 16px 18px; }
 .option .text { flex: 1; }

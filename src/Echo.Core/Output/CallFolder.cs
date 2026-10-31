@@ -36,6 +36,9 @@ public sealed class CallMetadata
 
     public string? SummaryProvider { get; set; }
 
+    /// <summary>Names of the voices recognised in the call (1 → "Intervenant 1" or a name given by the user).</summary>
+    public Dictionary<int, string> SpeakerNames { get; set; } = [];
+
     [JsonIgnore]
     public TimeSpan Duration => TimeSpan.FromSeconds(DurationSeconds);
 
@@ -56,6 +59,7 @@ public sealed class CallFolder
     public const string ReportFileName = "compte-rendu.html";
     public const string MetadataFileName = "infos.json";
     public const string TranscriptDataFileName = "transcription.json";
+    public const string SpeakersFileName = "voix.json";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -75,6 +79,9 @@ public sealed class CallFolder
     public string EnvelopePath => System.IO.Path.Combine(Path, EnvelopeFileName);
 
     public string TranscriptPath => System.IO.Path.Combine(Path, TranscriptFileName);
+
+    /// <summary>Voice prints and names of the speakers met during the recording.</summary>
+    public string SpeakersPath => System.IO.Path.Combine(Path, SpeakersFileName);
 
     /// <summary>Paragraphs as data, for the Echo window (hidden file).</summary>
     public string TranscriptDataPath => System.IO.Path.Combine(Path, TranscriptDataFileName);

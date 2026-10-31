@@ -32,6 +32,9 @@ const ICONS = {
 const icon = (name, cls = '') => `<svg class="icon ${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name] ?? ''}</svg>`;
 
 const APP_ICONS = { teams: 'users', discord: 'headset' };
+const VOICE_COLORS = ['#c084fc', '#f59e0b', '#38bdf8', '#f472b6', '#a3e635'];
+const ME_COLOR = '#2bd67b';
+const voiceColor = v => v > 0 ? VOICE_COLORS[(v - 1) % VOICE_COLORS.length] : '#8b93a7';
 const APP_NAMES = { teams: 'Teams', discord: 'Discord' };
 
 // ---------- Helpers ----------
@@ -52,6 +55,28 @@ function duration(seconds) {
 const dateFmt = new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 const timeFmt = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' });
 const dateTime = iso => { const d = new Date(iso); return `${dateFmt.format(d)} · ${timeFmt.format(d)}`; };
+
+function talkTime(seconds) {
+  const s = Math.round(seconds ?? 0);
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${pad(s % 60)}`;
+}
+
+function initials(name) {
+  const generic = /^Intervenant (\d+)$/.exec(name);
+  if (generic) return generic[1];
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || '?';
+}
+
+// A speaker "pill": avatar, name, talk time. Renamable ones turn into a text field on click.
+function speakerChip({ key, name, color, speaking = false, talk = null, renamable = false, editing = false }) {
+  const label = editing
+    ? `<input class="speaker-input" data-rename="${esc(key)}" value="${esc(name)}" maxlength="40" spellcheck="false">`
+    : `<span class="sname">${esc(name)}</span>`;
+  return `<div class="speaker ${speaking ? 'speaking' : ''} ${renamable ? 'renamable' : ''}" style="--c:${color}" ${renamable && !editing ? `data-edit="${esc(key)}" title="Cliquer pour donner un nom"` : ''}>
+    <span class="avatar">${esc(initials(name))}</span>
+    <span class="sinfo">${label}${talk !== null ? `<span class="stalk">${talkTime(talk)}</span>` : ''}</span>
+  </div>`;
+}
 
 function size(bytes) {
   if (!bytes) return '';
@@ -108,6 +133,8 @@ const ui = {
   detail: null,
   tab: 'summary',
   starting: false,
+  editing: null,
+  namesChanged: false,
   structureKey: '',
   info: {},
 };
@@ -192,6 +219,7 @@ function renderRecord() {
         <div class="meter me"><div class="meter-label">${icon('mic')}Vous</div><div class="meter-track"><div class="meter-fill" id="meter-me"></div></div></div>
       </div>
       <div class="rec-chips" id="rec-chips"></div>
+      <div class="speakers" id="speakers"></div>
     </div>` : `
     <div class="card recorder">
       <button class="rec-button" data-action="start" ${ui.starting ? 'disabled' : ''} title="Démarrer l'enregistrement">${icon('mic')}</button>
@@ -247,6 +275,25 @@ function updateLive() {
     const html = mic + source;
     if (chips.innerHTML !== html) chips.innerHTML = html;
   }
+  renderLiveSpeakers(rec);
+}
+
+function renderLiveSpeakers(rec) {
+  const el = $('#speakers');
+  const sp = rec.speakers;
+  if (!el || !sp) { if (el) el.innerHTML = ''; return; }
+  if (el.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return; // renaming
+  const speaking = sp.meSpeaking ? 'Vous' : sp.list.find(s => s.speaking)?.name;
+  const chips = [speakerChip({ key: 'me', name: 'Vous', color: ME_COLOR, speaking: sp.meSpeaking, talk: sp.meTalk })]
+    .concat(sp.list.map(s => speakerChip({ key: `live-${s.id}`, name: s.name, color: voiceColor(s.id), speaking: s.speaking, talk: s.talk, renamable: true, editing: ui.editing === `live-${s.id}` })));
+  const html = `<div class="speakers-head">
+      <span class="now">${speaking ? `<span class="dot live"></span><strong>${esc(speaking)}</strong>&nbsp;parle` : 'Personne ne parle'}</span>
+      <span>${sp.list.length ? `${sp.list.length} voix reconnue${sp.list.length > 1 ? 's' : ''} · cliquez pour nommer` : 'Les voix apparaissent dès qu\'elles parlent'}</span>
+    </div>
+    <div class="speaker-grid">${chips.join('')}</div>`;
+  if (el.innerHTML !== html) el.innerHTML = html;
+  const input = el.querySelector('input');
+  if (input && document.activeElement !== input) { input.focus(); input.select(); }
 }
 
 setInterval(() => {
@@ -307,6 +354,8 @@ function renderRecordings() {
 }
 
 async function openDetail(id) {
+  ui.namesChanged = false;
+  ui.editing = null;
   ui.detail = await call('recordings.get', { id });
   ui.tab = ui.detail.summaryHtml ? 'summary' : 'transcript';
   navigate('detail');
@@ -327,7 +376,7 @@ function renderDetail() {
   const transcript = d.paragraphs.length
     ? `<div class="transcript">${d.paragraphs.map(p => `<div class="para ${p.speaker}" data-start="${p.start}" data-end="${p.end}">
         <button class="t" data-t="${p.start}">${stamp(p.start)}</button>
-        <div><span class="who">${esc(p.speaker === 'me' ? d.myName : d.othersName)}</span>${esc(p.text)}</div></div>`).join('')}</div>`
+        <div><span class="who" style="color:${p.speaker === 'me' ? ME_COLOR : voiceColor(p.voice)}">${esc(p.name)}</span>${esc(p.text)}</div></div>`).join('')}</div>`
     : `<div class="notice">${icon('info')}${r.status === 'done' ? 'Aucune parole détectée.' : 'La transcription sera prête après le traitement de l\'appel.'}</div>`;
 
   return `<div class="page">
@@ -348,6 +397,7 @@ function renderDetail() {
         <button class="btn danger" data-action="detail-delete" ${r.status === 'recording' ? 'disabled' : ''}>${icon('trash')}Supprimer</button>
       </div>
     </div>
+    ${renderVoices(d)}
     <div class="tabs">
       <button class="tab ${ui.tab === 'summary' ? 'active' : ''}" data-tab="summary">${icon('sparkles')}Synthèse</button>
       <button class="tab ${ui.tab === 'transcript' ? 'active' : ''}" data-tab="transcript">${icon('text')}Transcription</button>
@@ -356,7 +406,20 @@ function renderDetail() {
   </div>`;
 }
 
+function renderVoices(d) {
+  if (!d.voices?.length && !d.meTalk) return '';
+  const chips = [speakerChip({ key: 'me', name: d.myName, color: ME_COLOR, talk: d.meTalk })]
+    .concat(d.voices.map(v => speakerChip({ key: `voice-${v.voice}`, name: v.name, color: voiceColor(v.voice), talk: v.talk, renamable: true, editing: ui.editing === `voice-${v.voice}` })));
+  const resummarize = ui.namesChanged
+    ? `<div class="notice" style="margin-top:12px">${icon('sparkles')}<span style="flex:1">Noms modifiés : la transcription est à jour.</span><button class="btn" data-action="detail-resummarize">${icon('refresh')}Refaire la synthèse avec ces noms</button></div>`
+    : '';
+  return `<div class="card voices"><div class="voices-head"><span class="section-label" style="margin:0">Intervenants</span><span class="hint">${d.voices.length ? 'Cliquez sur une voix pour lui donner un nom' : ''}</span></div>
+    <div class="speaker-grid left">${chips.join('')}</div>${resummarize}</div>`;
+}
+
 function bindDetail() {
+  const input = document.querySelector('.voices input');
+  if (input) { input.focus(); input.select(); }
   const audio = $('#audio');
   if (!audio) return;
   let current = null;
@@ -424,6 +487,7 @@ function renderSettings() {
       ${field('Modèle', 'Transcription locale (Whisper), sur ce PC', select('s-whisperModel', s.whisperModel, [['', 'Automatique — meilleur modèle installé'], ...o.models.map(m => [m.file, `${m.label}${m.installed ? ' — installé' : ` — ${m.sizeMb} Mo à télécharger`}`])]))}
       ${field('Langue des appels', '', select('s-language', s.language, o.languages.map(l => [l.code, l.name])))}
       ${field('Carte graphique', 'Transcription beaucoup plus rapide si disponible', toggle('s-useGpu', s.useGpu))}
+      ${field('Reconnaître les voix', 'Montre qui parle pendant l\'appel et sépare les intervenants dans la transcription', toggle('s-identifyVoices', s.identifyVoices))}
       ${field('Vocabulaire', 'Noms, sigles, jargon : aide à les écrire correctement', `<textarea class="input" id="s-vocabulary">${esc(s.vocabulary)}</textarea>`)}
     </div>
 
@@ -465,7 +529,7 @@ function readSettingsForm() {
     startWithWindows: chk('startWithWindows'), notifyOnStart: chk('notifyOnStart'),
     opusBitrate: Number(seg('opusBitrate')), microphoneId: val('microphoneId'),
     echoCancellation: chk('echoCancellation'), recordMicWhenUnknown: chk('recordMicWhenUnknown'),
-    whisperModel: val('whisperModel'), language: val('language'), useGpu: chk('useGpu'), vocabulary: val('vocabulary'),
+    whisperModel: val('whisperModel'), language: val('language'), useGpu: chk('useGpu'), identifyVoices: chk('identifyVoices'), vocabulary: val('vocabulary'),
     summaryProvider: seg('summaryProvider'), apiKey: val('apiKey'),
     claudeModel: val('claudeModel'), ollamaUrl: val('ollamaUrl'), ollamaModel: val('ollamaModel'),
     theme: seg('theme'),
@@ -494,6 +558,12 @@ function applyTheme(theme) {
 
 // ---------- Events ----------
 document.addEventListener('click', async e => {
+  const edit = e.target.closest('[data-edit]');
+  if (edit) {
+    ui.editing = edit.dataset.edit;
+    if (ui.page === 'detail') render(); else renderLiveSpeakers(ui.status.recording);
+    return;
+  }
   const t = e.target.closest('[data-nav],[data-app],[data-action],[data-open],[data-filter],[data-tab],[data-t],[data-seg] button,[data-link]');
   if (!t) return;
 
@@ -567,6 +637,13 @@ document.addEventListener('click', async e => {
       ui.detail = await call('recordings.get', { id: ui.detail.summary.id });
       render();
       break;
+    case 'detail-resummarize':
+      await call('recordings.resummarize', { id: ui.detail.summary.id });
+      ui.namesChanged = false;
+      toast('Synthèse relancée', 'Elle sera mise à jour avec les noms des intervenants.');
+      ui.detail = await call('recordings.get', { id: ui.detail.summary.id });
+      render();
+      break;
     case 'detail-delete':
       if (!confirm(`Supprimer « ${ui.detail.summary.title} » ? Le dossier ira dans la corbeille.`)) return;
       await call('recordings.delete', { id: ui.detail.summary.id });
@@ -594,6 +671,30 @@ document.addEventListener('input', e => {
 
 document.addEventListener('keydown', e => {
   if (e.target.id === 'title-edit' && e.key === 'Enter') e.target.blur();
+  if (e.target.dataset?.rename) {
+    if (e.key === 'Enter') e.target.blur();
+    if (e.key === 'Escape') { e.target.value = ''; e.target.blur(); }
+  }
+});
+
+document.addEventListener('focusout', async e => {
+  const key = e.target.dataset?.rename;
+  if (!key) return;
+  const name = e.target.value.trim();
+  ui.editing = null;
+  if (key.startsWith('live-')) {
+    if (name) await call('speakers.renameLive', { id: Number(key.slice(5)), name });
+    renderLiveSpeakers(ui.status.recording);
+  } else if (key.startsWith('voice-') && ui.detail) {
+    const voice = Number(key.slice(6));
+    const current = ui.detail.voices.find(v => v.voice === voice)?.name;
+    if (name && name !== current) {
+      await call('recordings.renameVoice', { id: ui.detail.summary.id, voice, name });
+      ui.detail = await call('recordings.get', { id: ui.detail.summary.id });
+      ui.namesChanged = true;
+    }
+    render();
+  }
 });
 
 document.addEventListener('focusout', async e => {

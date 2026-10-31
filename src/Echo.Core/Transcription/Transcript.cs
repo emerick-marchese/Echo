@@ -14,10 +14,22 @@ public enum Speaker
 public readonly record struct RawSegment(TimeSpan Start, TimeSpan End, string Text, float Probability);
 
 /// <summary>A recognised segment placed on the call timeline.</summary>
-public sealed record TranscriptSegment(TimeSpan Start, TimeSpan End, string Text, Speaker Speaker = Speaker.Others);
+/// <param name="Voice">For other participants: which voice (1, 2…) recognised by its voice print; 0 = not identified.</param>
+public sealed record TranscriptSegment(TimeSpan Start, TimeSpan End, string Text, Speaker Speaker = Speaker.Others, int Voice = 0);
 
 /// <summary>Consecutive segments of the same speaker, shown as one paragraph.</summary>
-public sealed record TranscriptParagraph(TimeSpan Start, TimeSpan End, Speaker Speaker, string Text);
+public sealed record TranscriptParagraph(TimeSpan Start, TimeSpan End, Speaker Speaker, string Text, int Voice = 0);
+
+/// <summary>Names shown for each speaker: you, the identified voices, and everybody else.</summary>
+public sealed record SpeakerNaming(string MyName, string OthersName, IReadOnlyDictionary<int, string>? Voices = null)
+{
+    public string NameOf(Speaker speaker, int voice) =>
+        speaker == Speaker.Me ? MyName
+        : voice > 0 ? (Voices is not null && Voices.TryGetValue(voice, out var name) ? name : DefaultVoiceName(voice))
+        : OthersName;
+
+    public static string DefaultVoiceName(int voice) => $"Intervenant {voice}";
+}
 
 public static class SpeakerAttributor
 {
@@ -118,11 +130,12 @@ public static class TranscriptFormatter
         {
             bool sameParagraph = last is not null
                 && segment.Speaker == last.Speaker
+                && segment.Voice == last.Voice
                 && segment.Start - last.End <= gap
                 && text.Length < 700;
             if (!sameParagraph && first is not null)
             {
-                paragraphs.Add(new TranscriptParagraph(first.Start, last!.End, first.Speaker, text.ToString()));
+                paragraphs.Add(new TranscriptParagraph(first.Start, last!.End, first.Speaker, text.ToString(), first.Voice));
                 text.Clear();
                 first = null;
             }
@@ -135,7 +148,7 @@ public static class TranscriptFormatter
 
         if (first is not null)
         {
-            paragraphs.Add(new TranscriptParagraph(first.Start, last!.End, first.Speaker, text.ToString()));
+            paragraphs.Add(new TranscriptParagraph(first.Start, last!.End, first.Speaker, text.ToString(), first.Voice));
         }
         return paragraphs;
     }
@@ -145,16 +158,19 @@ public static class TranscriptFormatter
     public static string SpeakerName(Speaker speaker, string myName, string othersName) =>
         speaker == Speaker.Me ? myName : othersName;
 
-    /// <summary>"[00:01:23] Moi : …" lines, one paragraph per line.</summary>
-    public static string ToText(IEnumerable<TranscriptParagraph> paragraphs, string myName, string othersName)
+    public static string ToText(IEnumerable<TranscriptParagraph> paragraphs, SpeakerNaming naming)
     {
         var sb = new StringBuilder();
         foreach (var p in paragraphs)
         {
             sb.Append('[').Append(Timestamp(p.Start)).Append("] ")
-              .Append(SpeakerName(p.Speaker, myName, othersName)).Append(" : ")
+              .Append(naming.NameOf(p.Speaker, p.Voice)).Append(" : ")
               .AppendLine(p.Text);
         }
         return sb.ToString();
     }
+
+    /// <summary>"[00:01:23] Moi : …" lines, one paragraph per line.</summary>
+    public static string ToText(IEnumerable<TranscriptParagraph> paragraphs, string myName, string othersName) =>
+        ToText(paragraphs, new SpeakerNaming(myName, othersName));
 }

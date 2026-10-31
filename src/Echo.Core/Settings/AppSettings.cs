@@ -48,6 +48,9 @@ public sealed class AppSettings
     /// <summary>Use the GPU (Vulkan) for transcription when available.</summary>
     public bool UseGpu { get; set; } = true;
 
+    /// <summary>Recognise the other participants by their voice (live and in the transcript).</summary>
+    public bool IdentifyVoices { get; set; } = true;
+
     /// <summary>Names, acronyms, jargon: helps Whisper spell them correctly.</summary>
     public string Vocabulary { get; set; } = string.Empty;
 

@@ -26,7 +26,8 @@ public sealed record RecordingDetail(
     string FolderPath,
     string? MuteSource,
     string? WhisperModel,
-    string? SummaryProvider);
+    string? SummaryProvider,
+    IReadOnlyDictionary<int, string> SpeakerNames);
 
 /// <summary>Reads and manages the recordings folder (one sub-folder per call).</summary>
 public sealed class RecordingLibrary
@@ -63,7 +64,8 @@ public sealed class RecordingLibrary
             folder.Path,
             metadata.MuteSource,
             metadata.WhisperModel,
-            metadata.SummaryProvider);
+            metadata.SummaryProvider,
+            metadata.SpeakerNames);
     }
 
     /// <summary>Resolves a recording id (its folder name) safely: no path may escape the root.</summary>
@@ -122,13 +124,13 @@ public sealed class RecordingLibrary
 /// <summary>Stores transcript paragraphs as JSON; also reads the text format of older recordings.</summary>
 public static partial class TranscriptData
 {
-    private sealed record Item(double Start, double End, string Speaker, string Text);
+    private sealed record Item(double Start, double End, string Speaker, string Text, int Voice = 0);
 
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
     public static void Write(string path, IEnumerable<TranscriptParagraph> paragraphs)
     {
-        var items = paragraphs.Select(p => new Item(p.Start.TotalSeconds, p.End.TotalSeconds, p.Speaker == Speaker.Me ? "me" : "others", p.Text));
+        var items = paragraphs.Select(p => new Item(p.Start.TotalSeconds, p.End.TotalSeconds, p.Speaker == Speaker.Me ? "me" : "others", p.Text, p.Voice));
         File.WriteAllText(path, JsonSerializer.Serialize(items, Options));
         try
         {
@@ -144,7 +146,7 @@ public static partial class TranscriptData
         var items = JsonSerializer.Deserialize<List<Item>>(File.ReadAllText(path), Options) ?? [];
         return items.Select(i => new TranscriptParagraph(
             TimeSpan.FromSeconds(i.Start), TimeSpan.FromSeconds(i.End),
-            i.Speaker == "me" ? Speaker.Me : Speaker.Others, i.Text)).ToList();
+            i.Speaker == "me" ? Speaker.Me : Speaker.Others, i.Text, i.Voice)).ToList();
     }
 
     /// <summary>Parses "[00:01:23] Name : text" lines; a paragraph is "me" when spoken by <paramref name="myName"/>.</summary>

@@ -85,6 +85,8 @@ internal sealed class UiBridge
             case "recording.stop":
                 await _coordinator.StopRecordingAsync().ConfigureAwait(true);
                 return null;
+            case "speakers.renameLive":
+                return _coordinator.RenameLiveSpeaker(args.TryGetProperty("id", out var sid) ? sid.GetInt32() : 0, Str(args, "name"));
             case "recording.setAuto":
                 _settings.Update(s =>
                 {
@@ -99,6 +101,21 @@ internal sealed class UiBridge
                 return BuildDetail(library, Str(args, "id"));
             case "recordings.rename":
                 return library.Rename(Str(args, "id"), Str(args, "title"));
+            case "recordings.renameVoice":
+            {
+                var folder = Require(library, Str(args, "id"));
+                EnsureNotBusy(folder);
+                int voice = args.TryGetProperty("voice", out var v) ? v.GetInt32() : 0;
+                var s = _settings.Current;
+                return CallOutputs.RenameVoice(folder, voice, Str(args, "name"), s.MyName, s.OthersName);
+            }
+            case "recordings.resummarize":
+            {
+                var folder = Require(library, Str(args, "id"));
+                EnsureNotBusy(folder);
+                _coordinator.Processing.EnqueueSummary(folder);
+                return true;
+            }
             case "recordings.reprocess":
             {
                 var folder = Require(library, Str(args, "id"));
@@ -194,6 +211,15 @@ internal sealed class UiBridge
                         _ => "unknown",
                     },
                     levels = new { me, others },
+                    speakers = _coordinator.Speakers is { } live
+                        ? new
+                        {
+                            meSpeaking = live.MeSpeaking,
+                            meTalk = live.MeTalkSeconds,
+                            current = live.CurrentSpeakerId,
+                            list = live.Speakers.Select(sp => new { id = sp.Id, name = sp.Name, speaking = sp.Speaking, talk = sp.TalkSeconds }),
+                        }
+                        : null,
                 }
                 : null,
             processing = status.ProcessingQueueLength > 0
@@ -226,15 +252,26 @@ internal sealed class UiBridge
     {
         var detail = library.Get(id) ?? throw new InvalidOperationException("Enregistrement introuvable.");
         var settings = _settings.Current;
+        var naming = new SpeakerNaming(settings.MyName, settings.OthersName, detail.SpeakerNames);
+        var voices = detail.Paragraphs
+            .Where(p => p.Speaker == Speaker.Others && p.Voice > 0)
+            .GroupBy(p => p.Voice)
+            .Select(g => new { voice = g.Key, name = naming.NameOf(Speaker.Others, g.Key), talk = g.Sum(p => (p.End - p.Start).TotalSeconds) })
+            .OrderByDescending(v => v.talk)
+            .ToList();
         return new
         {
             summary = ToDto(detail.Summary),
             summaryHtml = detail.SummaryMarkdown is { } md ? ReportWriter.MarkdownToHtml(md) : null,
+            voices,
+            meTalk = detail.Paragraphs.Where(p => p.Speaker == Speaker.Me).Sum(p => (p.End - p.Start).TotalSeconds),
             paragraphs = detail.Paragraphs.Select(p => new
             {
                 start = p.Start.TotalSeconds,
                 end = p.End.TotalSeconds,
                 speaker = p.Speaker == Speaker.Me ? "me" : "others",
+                voice = p.Voice,
+                name = naming.NameOf(p.Speaker, p.Voice),
                 text = p.Text,
             }),
             audioUrl = detail.AudioRelativePath is { } audio ? $"https://{MediaHost}/{audio}" : null,
@@ -262,6 +299,7 @@ internal sealed class UiBridge
             whisperModel = s.WhisperModel,
             language = s.Language,
             useGpu = s.UseGpu,
+            identifyVoices = s.IdentifyVoices,
             vocabulary = s.Vocabulary,
             summaryProvider = s.SummaryProvider.ToString().ToLowerInvariant(),
             hasApiKey = !string.IsNullOrEmpty(s.ClaudeApiKeyProtected),
@@ -327,6 +365,7 @@ internal sealed class UiBridge
             s.WhisperModel = Str(args, "whisperModel");
             s.Language = Text("language", "fr");
             s.UseGpu = Flag("useGpu");
+            s.IdentifyVoices = Flag("identifyVoices");
             s.Vocabulary = Str(args, "vocabulary").Trim();
             s.SummaryProvider = Str(args, "summaryProvider") switch
             {

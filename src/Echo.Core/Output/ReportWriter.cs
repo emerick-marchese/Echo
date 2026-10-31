@@ -24,8 +24,7 @@ public static class ReportWriter
         string? summaryMarkdown,
         string? summaryError,
         IReadOnlyList<TranscriptParagraph> paragraphs,
-        string myName,
-        string othersName)
+        SpeakerNaming naming)
     {
         var html = new StringBuilder();
         string title = WebUtility.HtmlEncode(metadata.Title);
@@ -58,6 +57,8 @@ public static class ReportWriter
             .who { font-weight:600; margin-right:6px; }
             .me .who { color:var(--me); }
             .others .who { color:var(--others); }
+            .v1 .who { color:#c084fc; } .v2 .who { color:#f59e0b; } .v3 .who { color:#38bdf8; }
+            .v4 .who { color:#f472b6; } .v5 .who { color:#a3e635; } .v0 .who { color:var(--others); }
             .playing { background:color-mix(in srgb, var(--accent) 12%, transparent); }
             </style>
             </head>
@@ -91,8 +92,8 @@ public static class ReportWriter
         }
         foreach (var p in paragraphs)
         {
-            string css = p.Speaker == Speaker.Me ? "me" : "others";
-            string who = WebUtility.HtmlEncode(TranscriptFormatter.SpeakerName(p.Speaker, myName, othersName));
+            string css = p.Speaker == Speaker.Me ? "me" : p.Voice > 0 ? $"others v{(p.Voice - 1) % 5 + 1}" : "others";
+            string who = WebUtility.HtmlEncode(naming.NameOf(p.Speaker, p.Voice));
             html.Append($"<div class=\"p {css}\" data-start=\"{Seconds(p.Start)}\" data-end=\"{Seconds(p.End)}\">")
                 .Append($"<button class=\"t\" data-t=\"{Seconds(p.Start)}\">{TranscriptFormatter.Timestamp(p.Start)}</button>")
                 .Append($"<div><span class=\"who\">{who}</span>{WebUtility.HtmlEncode(p.Text)}</div></div>");

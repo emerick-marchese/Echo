@@ -1,5 +1,6 @@
 using Echo.Core;
 using Echo.Core.Audio;
+using Echo.Core.Speakers;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
@@ -31,6 +32,9 @@ internal sealed class CallRecorder : IAsyncDisposable
     private readonly long _start100ns;
     private bool _stopped;
 
+    /// <summary>Optional: follows who speaks (fed with the captured audio).</summary>
+    public LiveSpeakerMonitor? Speakers { get; init; }
+
     private CallRecorder(string audioPath, string envelopePath, string title, RecorderOptions options, bool initiallyMuted)
     {
         _options = options;
@@ -60,9 +64,9 @@ internal sealed class CallRecorder : IAsyncDisposable
 
     public static async Task<CallRecorder> StartAsync(
         string audioPath, string envelopePath, string title, RecorderOptions options,
-        IReadOnlyList<int> appProcessIds, bool initiallyMuted)
+        IReadOnlyList<int> appProcessIds, bool initiallyMuted, LiveSpeakerMonitor? speakers = null)
     {
-        var recorder = new CallRecorder(audioPath, envelopePath, title, options, initiallyMuted);
+        var recorder = new CallRecorder(audioPath, envelopePath, title, options, initiallyMuted) { Speakers = speakers };
         try
         {
             recorder.StartMicrophone();
@@ -242,6 +246,11 @@ internal sealed class CallRecorder : IAsyncDisposable
                 : now - mono.Length * 10_000_000L / AudioClock.SampleRate;
             track.Write(mono, _mixer.FrameAt(captured));
             UpdateLevel(track.Role, mono);
+            if (Speakers is { } speakers)
+            {
+                if (track.Role == TrackRole.Remote) speakers.AddRemote(mono);
+                else speakers.AddMe(mono, _mixer.MicGate.IsMuted);
+            }
         };
         recorder.RecordingStopped += (_, e) =>
         {

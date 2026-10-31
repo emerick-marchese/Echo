@@ -3,6 +3,7 @@ using Echo.Core;
 using Echo.Core.Output;
 using Echo.Core.Processing;
 using Echo.Core.Settings;
+using Echo.Core.Speakers;
 using Echo.Core.Summary;
 using Echo.Core.Transcription;
 using Echo.Platform;
@@ -12,8 +13,10 @@ namespace Echo;
 /// <summary>Processes finished calls one after the other, in the background.</summary>
 internal sealed class ProcessingQueue
 {
+    private sealed record Job(CallFolder Folder, bool SummaryOnly);
+
     private readonly SettingsStore _settings;
-    private readonly Channel<CallFolder> _channel = Channel.CreateUnbounded<CallFolder>();
+    private readonly Channel<Job> _channel = Channel.CreateUnbounded<Job>();
     private int _pending;
 
     public ProcessingQueue(SettingsStore settings)
@@ -39,22 +42,29 @@ internal sealed class ProcessingQueue
     public void Start(CancellationToken cancellationToken) =>
         Task.Factory.StartNew(() => WorkAsync(cancellationToken), cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
-    public void Enqueue(CallFolder folder)
+    /// <summary>Full processing: transcription, voices, summary.</summary>
+    public void Enqueue(CallFolder folder) => Add(new Job(folder, SummaryOnly: false));
+
+    /// <summary>Summary only, from the existing transcript (after the voices were named).</summary>
+    public void EnqueueSummary(CallFolder folder) => Add(new Job(folder, SummaryOnly: true));
+
+    private void Add(Job job)
     {
         Interlocked.Increment(ref _pending);
-        _channel.Writer.TryWrite(folder);
+        _channel.Writer.TryWrite(job);
     }
 
     private async Task WorkAsync(CancellationToken cancellationToken)
     {
         try
         {
-            await foreach (var folder in _channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            await foreach (var job in _channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
+                var folder = job.Folder;
                 CurrentFolderPath = folder.Path;
                 try
                 {
-                    var result = await ProcessAsync(folder, cancellationToken).ConfigureAwait(false);
+                    var result = await ProcessAsync(job, cancellationToken).ConfigureAwait(false);
                     Log.Info($"Traitement terminé : {result.Folder.Path}");
                     Completed?.Invoke(result);
                 }
@@ -81,20 +91,46 @@ internal sealed class ProcessingQueue
         }
     }
 
-    private async Task<ProcessingResult> ProcessAsync(CallFolder folder, CancellationToken cancellationToken)
+    private async Task<ProcessingResult> ProcessAsync(Job job, CancellationToken cancellationToken)
     {
         var settings = _settings.Current;
         var progress = new Progress<string>(Report);
-        string modelPath = await EnsureModelAsync(settings, cancellationToken).ConfigureAwait(false);
-
         ISummarizer? summarizer = CreateSummarizer(settings, out string? unavailableReason);
+
+        if (job.SummaryOnly)
+        {
+            var summaryProcessor = new CallProcessor(() => throw new InvalidOperationException(), () => summarizer);
+            var summaryOptions = new ProcessingOptions(settings.MyName, settings.OthersName, null, unavailableReason);
+            return await summaryProcessor.ResummarizeAsync(job.Folder, summaryOptions, progress, cancellationToken).ConfigureAwait(false);
+        }
+
+        string modelPath = await EnsureModelAsync(settings, cancellationToken).ConfigureAwait(false);
+        string? voiceModel = settings.IdentifyVoices ? await EnsureVoiceModelAsync(cancellationToken).ConfigureAwait(false) : null;
         var processor = new CallProcessor(
             () => new WhisperTranscriber(modelPath, settings.Language, settings.Vocabulary, settings.UseGpu),
-            () => summarizer);
+            () => summarizer,
+            () => voiceModel is null ? null : new SherpaSpeakerEmbedder(voiceModel, threads: 2));
 
         var options = new ProcessingOptions(settings.MyName, settings.OthersName, Path.GetFileName(modelPath), unavailableReason);
         Report("Préparation de la transcription…");
-        return await processor.ProcessAsync(folder, options, progress, cancellationToken).ConfigureAwait(false);
+        return await processor.ProcessAsync(job.Folder, options, progress, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Voice-print model (28 MB), downloaded if the installer could not. Null if unavailable.</summary>
+    public static async Task<string?> EnsureVoiceModelAsync(CancellationToken cancellationToken)
+    {
+        var folders = ModelCatalog.SearchFolders(AppPaths.AppFolder, AppPaths.DataFolder);
+        if (SpeakerModel.Resolve(folders) is { } path) return path;
+        try
+        {
+            Log.Info("Téléchargement du modèle de reconnaissance des voix");
+            return await SpeakerModel.DownloadAsync(AppPaths.DownloadedModelsFolder, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or IOException or TaskCanceledException)
+        {
+            Log.Warn($"Modèle de reconnaissance des voix indisponible : {ex.Message}");
+            return null;
+        }
     }
 
     private void Report(string text)

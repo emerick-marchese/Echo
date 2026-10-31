@@ -167,7 +167,7 @@ public class ReportAndSettingsTests
         {
             new(TimeSpan.FromSeconds(75.5), TimeSpan.FromSeconds(80), Speaker.Me, "<script>alert(1)</script>"),
         };
-        string html = ReportWriter.Build(metadata, "# Titre\n\n## Déroulé\n- [00:01:15] Ouverture", null, paragraphs, "Moi", "Participants");
+        string html = ReportWriter.Build(metadata, "# Titre\n\n## Déroulé\n- [00:01:15] Ouverture", null, paragraphs, new SpeakerNaming("Moi", "Participants"));
 
         Assert.Contains("Point &lt;hebdo&gt;", html);
         Assert.Contains("&lt;script&gt;alert(1)&lt;/script&gt;", html);
