@@ -95,7 +95,15 @@ public sealed class LiveSpeakerMonitor : IDisposable
         lock (_lock)
         {
             bool ok = _tracker.Rename(id, name);
-            if (ok) _snapshot = _snapshot with { Speakers = [.. _snapshot.Speakers.Select(s => s.Id == id ? s with { Name = name.Trim() } : s)] };
+            if (ok)
+            {
+                // Two voices with the same name were merged: show the list as it is now.
+                var speaking = _snapshot.Speakers.Where(s => s.Speaking).Select(s => s.Id).ToHashSet();
+                _snapshot = _snapshot with
+                {
+                    Speakers = [.. _tracker.Speakers.Select(s => new LiveSpeaker(s.Id, s.Name, speaking.Contains(s.Id), s.TalkSeconds))],
+                };
+            }
             return ok;
         }
     }

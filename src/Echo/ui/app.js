@@ -306,7 +306,7 @@ function renderLiveSpeakers(rec) {
   const present = sp.list.filter(s => s.present !== false).length;
   const info = sp.exact
     ? `${icon('headset')}${sp.channel ? `${esc(sp.channel)} · ` : ''}${present + 1} participant${present > 0 ? 's' : ''} · pseudos Discord`
-    : sp.list.length ? `${sp.list.length} voix reconnue${sp.list.length > 1 ? 's' : ''} · cliquez pour nommer` : 'Les voix apparaissent dès qu\'elles parlent';
+    : sp.list.length ? `${sp.list.length} voix reconnue${sp.list.length > 1 ? 's' : ''} · cliquez pour nommer (même nom = même personne)` : 'Les voix apparaissent dès qu\'elles parlent';
   const html = `<div class="speakers-head">
       <span class="now">${speaking ? `<span class="dot live"></span><strong>${esc(speaking)}</strong>&nbsp;parle` : 'Personne ne parle'}</span>
       <span class="sp-info">${info}</span>
@@ -434,7 +434,8 @@ function renderVoices(d) {
   const resummarize = ui.namesChanged
     ? `<div class="notice" style="margin-top:12px">${icon('sparkles')}<span style="flex:1">Noms modifiés : la transcription est à jour.</span><button class="btn" data-action="detail-resummarize">${icon('refresh')}Refaire la synthèse avec ces noms</button></div>`
     : '';
-  const hint = d.exactNames ? `${icon('headset')}Pseudos Discord · cliquez pour renommer` : d.voices.length ? 'Cliquez sur une voix pour lui donner un nom' : '';
+  const hint = d.exactNames ? `${icon('headset')}Pseudos Discord · cliquez pour renommer`
+    : d.voices.length ? 'Cliquez sur une voix pour la nommer · donnez le même nom à deux voix pour les regrouper' : '';
   return `<div class="card voices"><div class="voices-head"><span class="section-label" style="margin:0">Intervenants</span><span class="hint">${hint}</span></div>
     <div class="speaker-grid left">${chips.join('')}</div>${resummarize}</div>`;
 }
@@ -771,9 +772,11 @@ document.addEventListener('focusout', async e => {
     const voice = Number(key.slice(6));
     const current = ui.detail.voices.find(v => v.voice === voice)?.name;
     if (name && name !== current) {
+      const merging = ui.detail.voices.some(v => v.voice !== voice && v.name.toLocaleLowerCase() === name.toLocaleLowerCase());
       await call('recordings.renameVoice', { id: ui.detail.summary.id, voice, name });
       ui.detail = await call('recordings.get', { id: ui.detail.summary.id });
       ui.namesChanged = true;
+      if (merging) toast('Voix regroupées', `Les deux voix sont maintenant « ${name} » dans la transcription.`);
     }
     render();
   }

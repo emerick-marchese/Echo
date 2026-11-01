@@ -132,9 +132,27 @@ export function createMockBridge() {
     'recordings.list': () => structuredClone(recordings),
     'recordings.get': ({ id }) => ({ ...structuredClone(detail), summary: structuredClone(recordings.find(r => r.id === id) ?? recordings[1]) }),
     'recordings.rename': () => true,
-    'recordings.renameVoice': ({ voice, name }) => { const v = detail.voices.find(x => x.voice === voice); if (v) v.name = name; detail.paragraphs.forEach(p => { if (p.voice === voice) p.name = name; }); return true; },
+    'recordings.renameVoice': ({ voice, name }) => {
+      const same = detail.voices.find(x => x.voice !== voice && x.name.toLowerCase() === name.toLowerCase());
+      const v = detail.voices.find(x => x.voice === voice);
+      if (same && v) {
+        same.talk += v.talk; same.name = name;
+        detail.voices = detail.voices.filter(x => x !== v);
+        detail.paragraphs.forEach(p => { if (p.voice === voice || p.voice === same.voice) { p.voice = same.voice; p.name = name; } });
+        return true;
+      }
+      if (v) v.name = name;
+      detail.paragraphs.forEach(p => { if (p.voice === voice) p.name = name; });
+      return true;
+    },
     'recordings.resummarize': () => true,
-    'speakers.renameLive': ({ id, name }) => { const s = live.list.find(x => x.id === id); if (s) s.name = name; return true; },
+    'speakers.renameLive': ({ id, name }) => {
+      const s = live.list.find(x => x.id === id);
+      const same = live.list.find(x => x.id !== id && x.name.toLowerCase() === name.toLowerCase());
+      if (s && same) { same.talk += s.talk; live.list = live.list.filter(x => x !== s); return true; }
+      if (s) s.name = name;
+      return true;
+    },
     'recordings.reprocess': () => true,
     'recordings.delete': () => true,
     'recordings.openFolder': () => {},

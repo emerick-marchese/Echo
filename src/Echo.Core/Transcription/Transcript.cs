@@ -122,6 +122,26 @@ public static partial class HallucinationFilter
 
 public static class TranscriptFormatter
 {
+    /// <summary>Joins consecutive paragraphs of the same person (after two voices were merged).</summary>
+    public static List<TranscriptParagraph> Regroup(IEnumerable<TranscriptParagraph> paragraphs, TimeSpan? maxGap = null)
+    {
+        var gap = maxGap ?? TimeSpan.FromSeconds(3);
+        var result = new List<TranscriptParagraph>();
+        foreach (var p in paragraphs)
+        {
+            if (result.Count > 0 && result[^1] is { } last && last.Speaker == p.Speaker && last.Voice == p.Voice
+                && p.Start - last.End <= gap && last.Text.Length + p.Text.Length < 1400)
+            {
+                result[^1] = last with { End = p.End, Text = $"{last.Text} {p.Text}" };
+            }
+            else
+            {
+                result.Add(p);
+            }
+        }
+        return result;
+    }
+
     public static List<TranscriptParagraph> ToParagraphs(IReadOnlyList<TranscriptSegment> segments, TimeSpan? maxGap = null)
     {
         var gap = maxGap ?? TimeSpan.FromSeconds(3);

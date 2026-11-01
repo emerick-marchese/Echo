@@ -41,19 +41,56 @@ public class SpeakerTrackingTests
     }
 
     [Fact]
-    public void New_voice_needs_two_consistent_windows()
+    public void New_voice_needs_three_consistent_windows()
     {
         var tracker = new OnlineSpeakerTracker();
         var random = new Random(1);
         Assert.Null(tracker.Observe(Direction(0, 0.2f, random), 0.4));
+        Assert.Null(tracker.Observe(Direction(0, 0.2f, random), 0.4));
         var first = tracker.Observe(Direction(0, 0.2f, random), 0.4);
         Assert.NotNull(first);
         Assert.Equal("Intervenant 1", first!.Name);
+        Assert.Equal(1.2, first.TalkSeconds, 3);
 
-        // A single odd window (cough, overlap) does not create a voice.
+        // One or two odd windows (cough, laugh, overlap) do not create a voice.
+        Assert.Null(tracker.Observe(Direction(5, 0.2f, random), 0.4));
         Assert.Null(tracker.Observe(Direction(5, 0.2f, random), 0.4));
         Assert.Same(first, tracker.Observe(Direction(0, 0.2f, random), 0.4));
         Assert.Single(tracker.Speakers);
+    }
+
+    [Fact]
+    public void A_voice_that_varies_stays_one_person()
+    {
+        // Real voices drift (intonation, codec): windows only ~0.55 alike with the voice so far.
+        var tracker = new OnlineSpeakerTracker();
+        var random = new Random(7);
+        float[] Wobbly()
+        {
+            var v = new float[16];
+            v[0] = 1;
+            v[1 + random.Next(4)] = 0.8f + (float)random.NextDouble() * 0.6f;   // changing timbre
+            return SpeakerMath.Normalize(v);
+        }
+        for (int i = 0; i < 60; i++) tracker.Observe(Wobbly(), 0.4);
+        Assert.Single(tracker.Speakers);
+    }
+
+    [Fact]
+    public void Giving_two_voices_the_same_name_merges_them()
+    {
+        var tracker = new OnlineSpeakerTracker();
+        var random = new Random(8);
+        for (int i = 0; i < 6; i++) tracker.Observe(Direction(0, 0.2f, random), 0.4);
+        for (int i = 0; i < 4; i++) tracker.Observe(Direction(6, 0.2f, random), 0.4);
+        Assert.Equal(2, tracker.Speakers.Count);
+
+        Assert.True(tracker.Rename(1, "Paul"));
+        Assert.True(tracker.Rename(2, "paul "));
+        var paul = Assert.Single(tracker.Speakers);
+        Assert.Equal(1, paul.Id);
+        Assert.Equal("paul", paul.Name);
+        Assert.Equal(4.0, paul.TalkSeconds, 3);
     }
 
     [Fact]
@@ -88,6 +125,27 @@ public class SpeakerTrackingTests
             for (int j = 0; j < truth.Length; j++)
                 Assert.Equal(truth[i] == truth[j], labels[i] == labels[j]);
         Assert.Equal(0, labels[0]); // numbered by first appearance
+    }
+
+    [Fact]
+    public void Tiny_groups_join_the_closest_voice()
+    {
+        var random = new Random(5);
+        float[] Mix(int a, int b, float wb)
+        {
+            var v = new float[16];
+            v[a] = 1;
+            v[b] = wb;
+            for (int i = 0; i < v.Length; i++) v[i] += (float)(random.NextDouble() - 0.5) * 0.1f;
+            return SpeakerMath.Normalize(v);
+        }
+        // Two people (long sentences) and one short odd sentence (a laugh) a bit like the first.
+        var prints = new List<float[]> { Mix(0, 1, 0.3f), Mix(8, 9, 0.3f), Mix(0, 1, 0.3f), Mix(4, 0, 0.45f), Mix(8, 9, 0.3f) };
+        var durations = new List<double> { 5, 4, 6, 1.0, 3 };
+
+        Assert.Equal(3, SpeakerClustering.Cluster(prints).Distinct().Count());
+        var labels = SpeakerClustering.Cluster(prints, durations: durations);
+        Assert.Equal([0, 1, 0, 0, 1], labels);
     }
 
     [Fact]
@@ -159,6 +217,16 @@ public class VoicePipelineTests
         Assert.True(CallOutputs.RenameVoice(folder, 2, "Hugo", "Moi", "Participants"));
         Assert.Contains("] Hugo : phrase", File.ReadAllText(folder.TranscriptPath));
         Assert.Contains("Hugo", File.ReadAllText(folder.ReportPath));
+
+        // Giving "Léa" the name "hugo" says they are the same person: both voices merge.
+        Assert.True(CallOutputs.RenameVoice(folder, 1, "hugo", "Moi", "Participants"));
+        var merged = TranscriptData.Read(folder.TranscriptDataPath);
+        Assert.Single(merged.Where(p => p.Speaker == Speaker.Others).Select(p => p.Voice).Distinct());
+        Assert.Equal(2, merged.Count(p => p.Speaker == Speaker.Others));   // the first two paragraphs joined
+        text = File.ReadAllText(folder.TranscriptPath);
+        Assert.DoesNotContain("Léa", text);
+        Assert.Contains("] hugo : phrase 1 phrase 2", text);
+        Assert.Single(folder.ReadMetadata().SpeakerNames);
     }
 
     private static float[] Tone(double frequency) =>
@@ -194,8 +262,10 @@ public class VoicePipelineTests
 
 /// <summary>
 /// With the real voice-print model (set ECHO_SPEAKER_MODEL, and ECHO_VOICES to a folder of
-/// spk{speaker}_{n}.wav files): checks that different recorded voices are told apart.
-/// Skipped when they are not available.
+/// spk{speaker}_{n}.wav files): checks that different recorded voices are told apart and that
+/// each person stays one voice. Use real people recorded at call quality (e.g. LibriSpeech
+/// readers passed through Opus 16 then 24 kb/s): synthetic voices are far more regular than
+/// real ones and give misleading thresholds. Skipped when they are not available.
 /// </summary>
 public class RealVoiceModelTests
 {

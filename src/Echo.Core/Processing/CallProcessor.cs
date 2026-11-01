@@ -216,7 +216,8 @@ public sealed class CallProcessor
 
         var indices = prints.Keys.OrderBy(i => i).ToList();
         var embeddings = indices.Select(i => prints[i]).ToList();
-        var clusters = SpeakerClustering.Cluster(embeddings);
+        var durations = indices.Select(i => (segments[i].End - segments[i].Start).TotalSeconds).ToList();
+        var clusters = SpeakerClustering.Cluster(embeddings, durations: durations);
         var (voices, names) = SpeakerClustering.Name(embeddings, clusters, profiles);
         var voiceOf = indices.Select((segment, k) => (segment, voice: voices[k])).ToDictionary(x => x.segment, x => x.voice);
 

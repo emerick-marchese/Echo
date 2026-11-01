@@ -3,11 +3,18 @@ namespace Echo.Core.Speakers;
 /// <summary>
 /// Groups the voice prints of a whole call into speakers (agglomerative clustering, average
 /// linkage on cosine similarity), then reuses the names given during the call.
+/// Measured on real voices through call codecs: 3 s of the same person score 0.61 or more
+/// (median 0.74), different people at most 0.29; sentences of 1–2 s vary more.
 /// </summary>
 public static class SpeakerClustering
 {
+    /// <summary>A group with less speech than this is too little to be trusted as a person.</summary>
+    public const double MinGroupSeconds = 2.5;
+
     /// <summary>Cluster index (0-based) for each embedding.</summary>
-    public static int[] Cluster(IReadOnlyList<float[]> embeddings, double threshold = 0.66)
+    /// <param name="durations">Seconds of speech behind each embedding: groups with very little
+    /// speech join the group they sound closest to (a cough, a laugh, a short "oui").</param>
+    public static int[] Cluster(IReadOnlyList<float[]> embeddings, double threshold = 0.5, IReadOnlyList<double>? durations = null, double absorbThreshold = 0.3)
     {
         int n = embeddings.Count;
         var labels = Enumerable.Range(0, n).ToArray();
@@ -38,7 +45,45 @@ public static class SpeakerClustering
                 }
             }
             if (a < 0 || best < threshold) break;
+            Merge(a, b);
+        }
 
+        // Tiny groups join the closest group, if it sounds at least a little alike.
+        if (durations is not null)
+        {
+            var seconds = new double[n];
+            for (int i = 0; i < n; i++) seconds[labels[i]] += durations[i];
+            while (true)
+            {
+                int small = -1;
+                for (int i = 0; i < n; i++)
+                {
+                    if (alive[i] && seconds[i] < MinGroupSeconds && (small < 0 || seconds[i] < seconds[small])) small = i;
+                }
+                if (small < 0) break;
+
+                int target = -1;
+                double best = absorbThreshold;
+                for (int k = 0; k < n; k++)
+                {
+                    if (alive[k] && k != small && seconds[k] >= MinGroupSeconds && sim[small, k] >= best)
+                    {
+                        best = sim[small, k];
+                        target = k;
+                    }
+                }
+                if (target < 0)
+                {
+                    seconds[small] = double.MaxValue; // unlike anybody: keep it
+                    continue;
+                }
+                seconds[target] += seconds[small];
+                Merge(target, small);
+            }
+        }
+
+        void Merge(int a, int b)
+        {
             // Merge b into a; average linkage (Lance–Williams update).
             for (int k = 0; k < n; k++)
             {
@@ -72,7 +117,7 @@ public static class SpeakerClustering
         IReadOnlyList<float[]> embeddings,
         int[] clusters,
         IReadOnlyList<SpeakerProfile> liveProfiles,
-        double matchThreshold = 0.68)
+        double matchThreshold = 0.55)
     {
         int count = clusters.Length == 0 ? 0 : clusters.Max() + 1;
         var centroids = new float[count][];
