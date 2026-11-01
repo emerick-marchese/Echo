@@ -39,6 +39,15 @@ public sealed class CallMetadata
     /// <summary>Names of the voices recognised in the call (1 → "Intervenant 1" or a name given by the user).</summary>
     public Dictionary<int, string> SpeakerNames { get; set; } = [];
 
+    /// <summary>The user's name in this call when the application gave it (Discord), instead of the one in the settings.</summary>
+    public string? MyName { get; set; }
+
+    /// <summary>Where the participants' names come from: "discord" (exact) or "voices" (voice prints).</summary>
+    public string? SpeakerSource { get; set; }
+
+    [JsonIgnore]
+    public bool HasExactNames => SpeakerSource == "discord";
+
     [JsonIgnore]
     public TimeSpan Duration => TimeSpan.FromSeconds(DurationSeconds);
 
@@ -60,6 +69,7 @@ public sealed class CallFolder
     public const string MetadataFileName = "infos.json";
     public const string TranscriptDataFileName = "transcription.json";
     public const string SpeakersFileName = "voix.json";
+    public const string DiscordFileName = Discord.DiscordCallData.FileName;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -82,6 +92,9 @@ public sealed class CallFolder
 
     /// <summary>Voice prints and names of the speakers met during the recording.</summary>
     public string SpeakersPath => System.IO.Path.Combine(Path, SpeakersFileName);
+
+    /// <summary>Who was in the Discord call and when each person spoke (Discord connection only).</summary>
+    public string DiscordPath => System.IO.Path.Combine(Path, DiscordFileName);
 
     /// <summary>Paragraphs as data, for the Echo window (hidden file).</summary>
     public string TranscriptDataPath => System.IO.Path.Combine(Path, TranscriptDataFileName);

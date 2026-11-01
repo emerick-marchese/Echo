@@ -234,6 +234,12 @@ svg.icon { width: 20px; height: 20px; flex: none; stroke: currentColor; fill: no
 .speaker .sinfo { display: flex; flex-direction: column; line-height: 1.2; }
 .speaker .sname { font-weight: 600; }
 .speaker .stalk { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.speaker .sname { display: inline-flex; align-items: center; gap: 5px; }
+.speaker .smuted { display: inline-flex; color: var(--danger); }
+.speaker .smuted svg { width: 13px; height: 13px; }
+.speaker.gone { opacity: .45; }
+.speakers-head .sp-info { display: inline-flex; align-items: center; gap: 6px; text-align: right; }
+.speakers-head .sp-info svg, .voices-head .hint svg { width: 15px; height: 15px; vertical-align: -3px; margin-right: 4px; color: var(--accent); }
 .speaker-input { width: 150px; border: 1px solid var(--c); border-radius: 6px; background: var(--surface); padding: 2px 6px; outline: none; user-select: text; }
 .voices { margin-bottom: 18px; }
 .voices-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
@@ -400,3 +406,11 @@ textarea.input { height: 84px; padding: 9px 12px; resize: vertical; }
   .field { grid-template-columns: 1fr; gap: 8px; }
   .save-bar { margin: 6px -22px -40px; padding: 14px 22px; }
 }
+
+/* ---------- Discord setup steps ---------- */
+.steps { margin: 4px 0 8px; padding: 12px 16px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--border); }
+.steps summary { cursor: pointer; font-weight: 600; }
+.steps ol { margin: 12px 0 8px; padding-left: 22px; display: grid; gap: 8px; color: var(--muted); }
+.steps ol strong { color: var(--text); }
+.steps .hint { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
+.steps code, .settings code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12.5px; padding: 1px 6px; border-radius: 6px; background: var(--surface-3); color: var(--text); user-select: all; }

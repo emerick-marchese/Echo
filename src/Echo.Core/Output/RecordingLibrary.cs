@@ -27,7 +27,9 @@ public sealed record RecordingDetail(
     string? MuteSource,
     string? WhisperModel,
     string? SummaryProvider,
-    IReadOnlyDictionary<int, string> SpeakerNames);
+    IReadOnlyDictionary<int, string> SpeakerNames,
+    string? MyName = null,
+    bool ExactNames = false);
 
 /// <summary>Reads and manages the recordings folder (one sub-folder per call).</summary>
 public sealed class RecordingLibrary
@@ -65,7 +67,9 @@ public sealed class RecordingLibrary
             metadata.MuteSource,
             metadata.WhisperModel,
             metadata.SummaryProvider,
-            metadata.SpeakerNames);
+            metadata.SpeakerNames,
+            metadata.MyName,
+            metadata.HasExactNames);
     }
 
     /// <summary>Resolves a recording id (its folder name) safely: no path may escape the root.</summary>

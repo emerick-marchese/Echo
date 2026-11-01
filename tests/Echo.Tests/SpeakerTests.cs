@@ -165,7 +165,7 @@ public class VoicePipelineTests
         Enumerable.Range(0, SpeakerModel.SampleRate * 2).Select(i => 0.3f * (float)Math.Sin(2 * Math.PI * frequency * i / SpeakerModel.SampleRate)).ToArray();
 
     /// <summary>One segment per loud stretch of audio.</summary>
-    private sealed class SegmentPerRegionTranscriber : ITranscriber
+    internal sealed class SegmentPerRegionTranscriber : ITranscriber
     {
         private int _count;
 

@@ -29,6 +29,10 @@ public sealed record SpeakerNaming(string MyName, string OthersName, IReadOnlyDi
         : OthersName;
 
     public static string DefaultVoiceName(int voice) => $"Intervenant {voice}";
+
+    /// <summary>Names of a recorded call: the call's own names first (Discord), then the settings.</summary>
+    public static SpeakerNaming For(Output.CallMetadata metadata, string myName, string othersName) =>
+        new(string.IsNullOrWhiteSpace(metadata.MyName) ? myName : metadata.MyName!, othersName, metadata.SpeakerNames);
 }
 
 public static class SpeakerAttributor

@@ -1,5 +1,7 @@
 using Echo.Core.Audio;
+using Echo.Core.Discord;
 using Echo.Core.Output;
+using Echo.Core.Settings;
 using Echo.Core.Speakers;
 using Echo.Core.Summary;
 using Echo.Core.Transcription;
@@ -51,13 +53,25 @@ public sealed class CallProcessor
             segments = HallucinationFilter.Filter(segments);
             segments = SpeakerAttributor.Attribute(segments, envelope);
 
-            using (var embedder = _createEmbedder?.Invoke())
+            // Connected to Discord during the call: everyone's exact name and speaking turns.
+            var discord = DiscordCallData.Load(folder.DiscordPath);
+            metadata.MyName = discord?.Me is { Name.Length: > 0 } me && options.MyName == AppSettings.DefaultMyName ? me.Name : null;
+            metadata.SpeakerSource = null;
+            if (discord is { HasSpeech: true })
             {
+                progress?.Report("Pseudos Discord…");
+                (segments, metadata.SpeakerNames) = DiscordAttribution.Apply(segments, discord);
+                metadata.SpeakerSource = "discord";
+            }
+            else
+            {
+                using var embedder = _createEmbedder?.Invoke();
                 if (embedder is not null)
                 {
                     progress?.Report("Reconnaissance des voix…");
                     var profiles = LiveSpeakerMonitor.LoadProfiles(folder.SpeakersPath);
                     (segments, metadata.SpeakerNames) = IdentifyVoices(folder.AudioPath, segments, embedder, profiles, cancellationToken);
+                    metadata.SpeakerSource = "voices";
                 }
             }
 
@@ -97,7 +111,7 @@ public sealed class CallProcessor
     }
 
     private static SpeakerNaming Naming(CallMetadata metadata, ProcessingOptions options) =>
-        new(options.MyName, options.OthersName, metadata.SpeakerNames);
+        SpeakerNaming.For(metadata, options.MyName, options.OthersName);
 
     private sealed record SummaryOutcome(string? Error, string? NewTitle);
 
@@ -114,7 +128,7 @@ public sealed class CallProcessor
         try
         {
             string transcript = TranscriptFormatter.ToText(paragraphs, naming);
-            var request = new SummaryRequest(metadata.App, metadata.Title, metadata.StartedAt, metadata.Duration, transcript, options.MyName, options.OthersName);
+            var request = new SummaryRequest(metadata.App, metadata.Title, metadata.StartedAt, metadata.Duration, transcript, naming.MyName, naming.OthersName, metadata.HasExactNames);
             string summary = await summarizer.SummarizeAsync(request, cancellationToken).ConfigureAwait(false);
             await File.WriteAllTextAsync(folder.SummaryPath, summary, cancellationToken).ConfigureAwait(false);
             return new SummaryOutcome(null, metadata.HasDefaultTitle ? TitleFromSummary(summary) : null);

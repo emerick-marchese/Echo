@@ -1,6 +1,8 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Echo.Core;
 using Echo.Core.Apps;
+using Echo.Core.Discord;
 using Echo.Core.Output;
 using Echo.Core.Settings;
 using Echo.Core.Teams;
@@ -167,6 +169,12 @@ internal sealed class UiBridge
 
             case "teams.pair":
                 return await _coordinator.RequestPairingAsync().ConfigureAwait(true);
+            case "discord.connect":
+                return await ConnectDiscordAsync(Str(args, "clientId").Trim(), Str(args, "clientSecret").Trim()).ConfigureAwait(true);
+            case "discord.disconnect":
+                _settings.Update(s => s.DiscordTokensProtected = null);
+                _coordinator.Discord.Reconfigure();
+                return null;
             case "app.openExternal":
                 string url = Str(args, "url");
                 if (!url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Lien refusé.");
@@ -188,6 +196,7 @@ internal sealed class UiBridge
         var status = _coordinator.Status;
         var settings = _settings.Current;
         var (me, others) = _coordinator.Levels;
+        var discord = _coordinator.Discord.State;
         return new
         {
             state = status.State.ToString().ToLowerInvariant(),
@@ -208,8 +217,10 @@ internal sealed class UiBridge
                     {
                         MuteSource.TeamsApi => "api",
                         MuteSource.AppWindow => "window",
+                        MuteSource.DiscordRpc => "discord",
                         _ => "unknown",
                     },
+                    pushToTalk = status.Mute?.Source == MuteSource.DiscordRpc && discord.PushToTalk,
                     levels = new { me, others },
                     speakers = _coordinator.Speakers is { } live
                         ? new
@@ -217,7 +228,9 @@ internal sealed class UiBridge
                             meSpeaking = live.MeSpeaking,
                             meTalk = live.MeTalkSeconds,
                             current = live.CurrentSpeakerId,
-                            list = live.Speakers.Select(sp => new { id = sp.Id, name = sp.Name, speaking = sp.Speaking, talk = sp.TalkSeconds }),
+                            channel = live.Channel,
+                            exact = live.ExactNames,
+                            list = live.Speakers.Select(sp => new { id = sp.Id, name = sp.Name, speaking = sp.Speaking, talk = sp.TalkSeconds, muted = sp.Muted, present = sp.Present }),
                         }
                         : null,
                 }
@@ -226,7 +239,51 @@ internal sealed class UiBridge
                 ? new { text = status.ProcessingText, queue = status.ProcessingQueueLength }
                 : null,
             teams = new { connected = status.Api.Connected, paired = status.ApiPaired, inMeeting = status.Api.HasMeetingState && status.Api.IsInMeeting },
+            discord = new
+            {
+                status = discord.Status switch
+                {
+                    DiscordLinkStatus.NotConfigured => "notConfigured",
+                    DiscordLinkStatus.DiscordClosed => "closed",
+                    DiscordLinkStatus.NeedsAuthorization => "needsAuth",
+                    DiscordLinkStatus.Connecting => "connecting",
+                    DiscordLinkStatus.Connected => "connected",
+                    _ => "error",
+                },
+                error = discord.Error,
+                user = discord.Me?.DisplayName,
+                inVoice = discord.InVoice,
+                channel = DiscordCallLog.ChannelLabel(discord.ChannelName, discord.GuildName),
+                participants = discord.Participants.Count,
+            },
         };
+    }
+
+    /// <summary>
+    /// Saves the user's Discord application, then asks Discord to show its authorization
+    /// window (the call waits until the user answers in Discord).
+    /// </summary>
+    private async Task<object> ConnectDiscordAsync(string clientId, string clientSecret)
+    {
+        if (!Regex.IsMatch(clientId, @"^\d{15,22}$"))
+        {
+            throw new InvalidOperationException("Client ID invalide : c'est une suite de chiffres (portail développeur Discord → votre application → OAuth2 → Client ID).");
+        }
+        var current = _settings.Current;
+        if (clientSecret.Length == 0 && string.IsNullOrEmpty(current.DiscordClientSecretProtected))
+        {
+            throw new InvalidOperationException("Collez le Client Secret de votre application Discord (OAuth2 → Reset Secret).");
+        }
+
+        _settings.Update(s =>
+        {
+            if (s.DiscordClientId != clientId) s.DiscordTokensProtected = null;
+            s.DiscordClientId = clientId;
+            if (clientSecret.Length > 0) _settings.SetDiscordClientSecret(s, clientSecret);
+        });
+        _coordinator.Discord.Reconfigure();
+        var me = await _coordinator.Discord.AuthorizeAsync(CancellationToken.None).ConfigureAwait(true);
+        return new { user = me.DisplayName };
     }
 
     private object ToDto(RecordingSummary r)
@@ -252,7 +309,7 @@ internal sealed class UiBridge
     {
         var detail = library.Get(id) ?? throw new InvalidOperationException("Enregistrement introuvable.");
         var settings = _settings.Current;
-        var naming = new SpeakerNaming(settings.MyName, settings.OthersName, detail.SpeakerNames);
+        var naming = new SpeakerNaming(string.IsNullOrWhiteSpace(detail.MyName) ? settings.MyName : detail.MyName!, settings.OthersName, detail.SpeakerNames);
         var voices = detail.Paragraphs
             .Where(p => p.Speaker == Speaker.Others && p.Voice > 0)
             .GroupBy(p => p.Voice)
@@ -276,8 +333,9 @@ internal sealed class UiBridge
             }),
             audioUrl = detail.AudioRelativePath is { } audio ? $"https://{MediaHost}/{audio}" : null,
             hasReport = File.Exists(Path.Combine(detail.FolderPath, CallFolder.ReportFileName)),
-            myName = settings.MyName,
+            myName = naming.MyName,
             othersName = settings.OthersName,
+            exactNames = detail.ExactNames,
         };
     }
 
@@ -306,6 +364,8 @@ internal sealed class UiBridge
             claudeModel = s.ClaudeModel,
             ollamaUrl = s.OllamaUrl,
             ollamaModel = s.OllamaModel,
+            discordClientId = s.DiscordClientId,
+            hasDiscordSecret = !string.IsNullOrEmpty(s.DiscordClientSecretProtected),
         };
     }
 

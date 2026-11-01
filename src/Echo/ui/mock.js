@@ -19,7 +19,11 @@ export function createMockBridge() {
     recording: null,
     processing: params.get('processing') ? { text: 'Transcription 42 %', queue: 1 } : null,
     teams: { connected: true, paired: false, inMeeting: false },
+    discord: params.get('discord') === 'off'
+      ? { status: 'notConfigured', error: null, user: null, inVoice: false, channel: null, participants: 0 }
+      : { status: 'connected', error: null, user: 'Emerick', inVoice: true, channel: 'Raid · Les Copains', participants: 3 },
   };
+  const discordOn = () => state.discord.status === 'connected';
   let startedAt = 0;
 
   const settings = {
@@ -29,6 +33,7 @@ export function createMockBridge() {
     whisperModel: '', language: 'fr', useGpu: true, identifyVoices: true, vocabulary: 'Echo, Kubernetes, RGPD',
     summaryProvider: 'claude', hasApiKey: true, claudeModel: 'claude-opus-5-5',
     ollamaUrl: 'http://localhost:11434', ollamaModel: 'mistral-nemo',
+    discordClientId: params.get('discord') === 'off' ? '' : '1301234567890123456', hasDiscordSecret: params.get('discord') !== 'off',
   };
 
   const now = Date.now();
@@ -65,13 +70,21 @@ export function createMockBridge() {
     hasReport: true,
     myName: 'Moi',
     othersName: 'Participants',
+    exactNames: false,
   };
 
-  const live = { meSpeaking: false, meTalk: 212, current: 2, list: [
-    { id: 1, name: 'Thomas', speaking: false, talk: 301 },
-    { id: 2, name: 'Intervenant 2', speaking: true, talk: 188 },
-    { id: 3, name: 'Intervenant 3', speaking: false, talk: 41 },
-  ] };
+  const live = discordOn()
+    ? { meSpeaking: false, meTalk: 212, current: 2, channel: 'Raid · Les Copains', exact: true, list: [
+      { id: 1, name: 'Thomas_92', speaking: false, talk: 301, muted: false, present: true },
+      { id: 2, name: 'Sarah ✦', speaking: true, talk: 188, muted: false, present: true },
+      { id: 3, name: 'xX_Kev_Xx', speaking: false, talk: 41, muted: true, present: true },
+      { id: 4, name: 'Lucas', speaking: false, talk: 12, muted: false, present: false },
+    ] }
+    : { meSpeaking: false, meTalk: 212, current: 2, list: [
+      { id: 1, name: 'Thomas', speaking: false, talk: 301 },
+      { id: 2, name: 'Intervenant 2', speaking: true, talk: 188 },
+      { id: 3, name: 'Intervenant 3', speaking: false, talk: 41 },
+    ] };
   function tick() {
     if (!state.recording) return;
     const t = performance.now() / 1000;
@@ -81,7 +94,8 @@ export function createMockBridge() {
       me: state.recording.muted ? 0 : Math.abs(Math.sin(t * 1.3 + 1)) * 0.25 * (Math.random() > 0.4 ? 1 : 0.05),
     };
     const who = Math.floor(t / 3) % 3;
-    live.list.forEach((s, i) => { s.speaking = i === who; if (s.speaking) s.talk += 0.25; });
+    live.list.forEach((s, i) => { s.speaking = i === who && s.present !== false && !s.muted; if (s.speaking) s.talk += 0.25; });
+    live.current = live.list.find(s => s.speaking)?.id ?? null;
     state.recording.speakers = structuredClone(live);
     emit('state', structuredClone(state));
   }
@@ -89,7 +103,8 @@ export function createMockBridge() {
 
   if (params.get('recording')) {
     startedAt = Date.now() - 754e3;
-    state.recording = { app: state.selectedApp, elapsed: 754, manual: true, muted: params.get('muted') === '1', muteSource: 'window', levels: { me: 0.2, others: 0.3 }, speakers: structuredClone(live) };
+    const viaDiscord = state.selectedApp === 'discord' && discordOn();
+    state.recording = { app: state.selectedApp, elapsed: 754, manual: true, muted: params.get('muted') === '1', muteSource: viaDiscord ? 'discord' : 'window', pushToTalk: viaDiscord && params.get('ptt') === '1', levels: { me: 0.2, others: 0.3 }, speakers: structuredClone(live) };
     state.state = 'recording';
   }
 
@@ -138,6 +153,15 @@ export function createMockBridge() {
     'settings.setTheme': ({ theme }) => { settings.theme = theme; state.theme = theme; },
     'settings.browseFolder': () => null,
     'teams.pair': () => true,
+    'discord.connect': async ({ clientId }) => {
+      if (!/^\d{15,22}$/.test(clientId)) throw new Error('Client ID invalide : c\'est une suite de chiffres (portail développeur Discord → votre application → OAuth2 → Client ID).');
+      await new Promise(r => setTimeout(r, 1500));
+      settings.discordClientId = clientId; settings.hasDiscordSecret = true;
+      state.discord = { status: 'connected', error: null, user: 'Emerick', inVoice: false, channel: null, participants: 0 };
+      emit('state', structuredClone(state));
+      return { user: 'Emerick' };
+    },
+    'discord.disconnect': () => { state.discord = { ...state.discord, status: 'needsAuth', inVoice: false }; emit('state', structuredClone(state)); },
     'app.openExternal': () => {},
     'app.openOutputFolder': () => {},
     'app.openLogs': () => {},

@@ -12,7 +12,8 @@ public sealed record SummaryRequest(
     TimeSpan Duration,
     string Transcript,
     string MyName,
-    string OthersName);
+    string OthersName,
+    bool ExactNames = false);
 
 public interface ISummarizer
 {
@@ -31,9 +32,13 @@ public static class SummaryPrompt
         $"""
         Tu rédiges des comptes rendus d'appels {request.App} clairs, fidèles et directement exploitables.
         Tu travailles à partir d'une transcription automatique : elle peut contenir des erreurs de reconnaissance (noms propres, termes techniques, chiffres). Corrige-les quand le contexte rend la bonne forme évidente, sans rien inventer.
-        Chaque intervention est attribuée à « {request.MyName} » (la personne qui a enregistré l'appel) ou à l'un des autres participants, reconnus à leur voix : « Intervenant 1 », « Intervenant 2 »… (ou le nom que l'utilisateur leur a donné), et « {request.OthersName} » quand la voix n'a pas pu être identifiée. La reconnaissance des voix peut parfois se tromper. Quand la conversation permet de savoir qui est un « Intervenant », utilise son vrai nom.
+        {Speakers(request)}
         N'ajoute aucune information absente de la transcription. Rédige dans la langue majoritaire de la transcription.
         """;
+
+    private static string Speakers(SummaryRequest request) => request.ExactNames
+        ? $"Chaque intervention est attribuée à « {request.MyName} » (la personne qui a enregistré l'appel) ou à un autre participant, désigné par son pseudo {request.App} exact ; « {request.OthersName} » désigne les rares passages qui n'ont pas pu être attribués. Utilise ces pseudos tels quels pour nommer les participants."
+        : $"Chaque intervention est attribuée à « {request.MyName} » (la personne qui a enregistré l'appel) ou à l'un des autres participants, reconnus à leur voix : « Intervenant 1 », « Intervenant 2 »… (ou le nom que l'utilisateur leur a donné), et « {request.OthersName} » quand la voix n'a pas pu être identifiée. La reconnaissance des voix peut parfois se tromper. Quand la conversation permet de savoir qui est un « Intervenant », utilise son vrai nom.";
 
     public static string User(SummaryRequest request) =>
         $"""

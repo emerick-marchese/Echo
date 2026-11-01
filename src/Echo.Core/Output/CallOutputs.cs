@@ -31,7 +31,7 @@ public static class CallOutputs
         folder.WriteMetadata(metadata);
 
         var paragraphs = TranscriptData.Read(folder.TranscriptDataPath);
-        var naming = new SpeakerNaming(myName, othersName, metadata.SpeakerNames);
+        var naming = SpeakerNaming.For(metadata, myName, othersName);
         WriteTranscript(folder, metadata, paragraphs, naming);
         WriteReport(folder, metadata, paragraphs, naming);
         return true;

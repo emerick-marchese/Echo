@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Echo.Core.Apps;
+using Echo.Core.Discord;
 
 namespace Echo.Core.Settings;
 
@@ -54,7 +55,10 @@ public sealed class AppSettings
     /// <summary>Names, acronyms, jargon: helps Whisper spell them correctly.</summary>
     public string Vocabulary { get; set; } = string.Empty;
 
-    public string MyName { get; set; } = "Moi";
+    public const string DefaultMyName = "Moi";
+
+    /// <summary>The user's name in transcripts ("Moi" = use the Discord name when connected).</summary>
+    public string MyName { get; set; } = DefaultMyName;
 
     public string OthersName { get; set; } = "Participants";
 
@@ -87,6 +91,15 @@ public sealed class AppSettings
     public bool PairingRequestedOnce { get; set; }
 
     public bool NotifyOnCallStart { get; set; } = true;
+
+    /// <summary>Client ID of the user's own Discord application (Developer Portal → OAuth2).</summary>
+    public string DiscordClientId { get; set; } = string.Empty;
+
+    /// <summary>Client secret of that application, encrypted for the current Windows user.</summary>
+    public string? DiscordClientSecretProtected { get; set; }
+
+    /// <summary>OAuth2 tokens Discord gave once the user authorized Echo, encrypted.</summary>
+    public string? DiscordTokensProtected { get; set; }
 }
 
 /// <summary>Encrypts secrets at rest (DPAPI on Windows).</summary>
@@ -133,6 +146,26 @@ public sealed class SettingsStore
 
     public void SetClaudeApiKey(AppSettings settings, string? apiKey) =>
         settings.ClaudeApiKeyProtected = string.IsNullOrWhiteSpace(apiKey) ? null : _protector.Protect(apiKey.Trim());
+
+    /// <summary>The user's Discord application, if entered (with its tokens once authorized).</summary>
+    public DiscordCredentials? DiscordCredentials
+    {
+        get
+        {
+            var s = Current;
+            if (string.IsNullOrWhiteSpace(s.DiscordClientId) || string.IsNullOrEmpty(s.DiscordClientSecretProtected)) return null;
+            string? secret = _protector.Unprotect(s.DiscordClientSecretProtected);
+            if (string.IsNullOrEmpty(secret)) return null;
+            var tokens = string.IsNullOrEmpty(s.DiscordTokensProtected) ? null : DiscordTokens.FromJson(_protector.Unprotect(s.DiscordTokensProtected));
+            return new DiscordCredentials(s.DiscordClientId, secret, tokens);
+        }
+    }
+
+    public void SetDiscordClientSecret(AppSettings settings, string secret) =>
+        settings.DiscordClientSecretProtected = _protector.Protect(secret.Trim());
+
+    public void SaveDiscordTokens(DiscordTokens? tokens) =>
+        Update(s => s.DiscordTokensProtected = tokens is null ? null : _protector.Protect(tokens.ToJson()));
 
     public void Update(Action<AppSettings> change)
     {

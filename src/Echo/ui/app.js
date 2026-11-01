@@ -64,15 +64,19 @@ function talkTime(seconds) {
 function initials(name) {
   const generic = /^Intervenant (\d+)$/.exec(name);
   if (generic) return generic[1];
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || '?';
+  // Letters and digits only: Discord pseudos often carry symbols or emoji.
+  const words = name.split(/[\s_.\-]+/).map(w => w.replace(/[^\p{L}\p{N}]/gu, '')).filter(Boolean);
+  const named = words.filter(w => /\p{L}/u.test(w));
+  return (named.length ? named : words).slice(0, 2).map(w => [...w][0].toUpperCase()).join('') || '?';
 }
 
 // A speaker "pill": avatar, name, talk time. Renamable ones turn into a text field on click.
-function speakerChip({ key, name, color, speaking = false, talk = null, renamable = false, editing = false }) {
+function speakerChip({ key, name, color, speaking = false, talk = null, renamable = false, editing = false, muted = false, gone = false }) {
   const label = editing
     ? `<input class="speaker-input" data-rename="${esc(key)}" value="${esc(name)}" maxlength="40" spellcheck="false">`
-    : `<span class="sname">${esc(name)}</span>`;
-  return `<div class="speaker ${speaking ? 'speaking' : ''} ${renamable ? 'renamable' : ''}" style="--c:${color}" ${renamable && !editing ? `data-edit="${esc(key)}" title="Cliquer pour donner un nom"` : ''}>
+    : `<span class="sname">${esc(name)}${muted ? `<span class="smuted" title="Muet dans Discord">${icon('mic-off')}</span>` : ''}</span>`;
+  const title = renamable && !editing ? 'Cliquer pour donner un nom' : gone ? 'A quitté l\'appel' : '';
+  return `<div class="speaker ${speaking ? 'speaking' : ''} ${renamable ? 'renamable' : ''} ${gone ? 'gone' : ''}" style="--c:${color}" ${renamable && !editing ? `data-edit="${esc(key)}"` : ''} ${title ? `title="${esc(title)}"` : ''}>
     <span class="avatar">${esc(initials(name))}</span>
     <span class="sinfo">${label}${talk !== null ? `<span class="stalk">${talkTime(talk)}</span>` : ''}</span>
   </div>`;
@@ -186,7 +190,7 @@ function render() {
 function recordStructureKey() {
   const s = ui.status;
   if (!s) return 'loading';
-  return JSON.stringify([s.selectedApp, s.autoRecord, s.autoStop, s.recording?.app ?? null, s.apps, ui.starting, s.summaryReady, !!s.processing]);
+  return JSON.stringify([s.selectedApp, s.autoRecord, s.autoStop, s.recording?.app ?? null, s.apps, ui.starting, s.summaryReady, !!s.processing, s.discord?.status, s.discord?.channel]);
 }
 
 function renderRecord() {
@@ -197,8 +201,10 @@ function renderRecord() {
   const appId = rec?.app ?? s.selectedApp;
   const appName = APP_NAMES[appId];
 
+  const discord = s.discord ?? {};
   const cards = s.apps.map(a => {
-    const state = a.inCall ? '<span class="dot call"></span>En appel'
+    const where = a.id === 'discord' && discord.status === 'connected' && discord.channel ? ` · ${esc(discord.channel)}` : '';
+    const state = a.inCall ? `<span class="dot call"></span>En appel${where}`
       : a.running ? '<span class="dot on"></span>Ouvert'
       : '<span class="dot"></span>Fermé';
     const selected = a.id === appId;
@@ -230,6 +236,9 @@ function renderRecord() {
   const banners = [];
   if (s.processing) {
     banners.push(`<div class="card banner">${icon('sparkles')}<div class="text"><strong>${esc(s.processing.text ?? 'Traitement en attente…')}</strong>${s.processing.queue > 1 ? ` · ${s.processing.queue} enregistrements en file` : ''}</div><button class="btn" data-nav="recordings">Voir</button></div>`);
+  }
+  if (appId === 'discord' && discord.status && discord.status !== 'connected') {
+    banners.push(`<div class="card banner">${icon('headset')}<div class="text"><strong>Pseudos exacts des participants :</strong> connectez Echo à Discord pour voir le vrai pseudo de chacun, qui parle comme dans Discord, et l'état exact de votre micro (push-to-talk compris).</div><button class="btn" data-nav="settings" data-scroll="discord">Connecter</button></div>`);
   }
   if (!s.summaryReady) {
     banners.push(`<div class="card banner">${icon('info')}<div class="text"><strong>Synthèse non configurée.</strong> Ajoutez une clé API Anthropic ou choisissez Ollama pour obtenir un résumé de chaque appel.</div><button class="btn" data-nav="settings">Configurer</button></div>`);
@@ -271,7 +280,14 @@ function updateLive() {
         ? `<span class="chip bad">${icon('mic-off')}Micro coupé dans ${esc(app)} — non enregistré</span>`
         : `<span class="chip good">${icon('mic')}Micro actif dans ${esc(app)} — enregistré</span>`;
     }
-    const source = rec.muteSource === 'api' ? `<span class="chip accent">${icon('link')}API Teams</span>` : '';
+    if (rec.pushToTalk) {
+      mic = rec.muted
+        ? `<span class="chip bad">${icon('mic-off')}Micro non transmis dans Discord — non enregistré</span>`
+        : `<span class="chip good">${icon('mic')}Push-to-talk enfoncé — enregistré</span>`;
+    }
+    const source = rec.muteSource === 'api' ? `<span class="chip accent">${icon('link')}API Teams</span>`
+      : rec.muteSource === 'discord' ? `<span class="chip accent">${icon('link')}Connecté à Discord</span>`
+      : '';
     const html = mic + source;
     if (chips.innerHTML !== html) chips.innerHTML = html;
   }
@@ -283,12 +299,17 @@ function renderLiveSpeakers(rec) {
   const sp = rec.speakers;
   if (!el || !sp) { if (el) el.innerHTML = ''; return; }
   if (el.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return; // renaming
-  const speaking = sp.meSpeaking ? 'Vous' : sp.list.find(s => s.speaking)?.name;
+  const current = sp.list.find(s => s.id === sp.current) ?? sp.list.find(s => s.speaking);
+  const speaking = sp.meSpeaking ? 'Vous' : current?.name;
   const chips = [speakerChip({ key: 'me', name: 'Vous', color: ME_COLOR, speaking: sp.meSpeaking, talk: sp.meTalk })]
-    .concat(sp.list.map(s => speakerChip({ key: `live-${s.id}`, name: s.name, color: voiceColor(s.id), speaking: s.speaking, talk: s.talk, renamable: true, editing: ui.editing === `live-${s.id}` })));
+    .concat(sp.list.map(s => speakerChip({ key: `live-${s.id}`, name: s.name, color: voiceColor(s.id), speaking: s.speaking, talk: s.talk, renamable: !sp.exact, editing: ui.editing === `live-${s.id}`, muted: s.muted, gone: s.present === false })));
+  const present = sp.list.filter(s => s.present !== false).length;
+  const info = sp.exact
+    ? `${icon('headset')}${sp.channel ? `${esc(sp.channel)} · ` : ''}${present + 1} participant${present > 0 ? 's' : ''} · pseudos Discord`
+    : sp.list.length ? `${sp.list.length} voix reconnue${sp.list.length > 1 ? 's' : ''} · cliquez pour nommer` : 'Les voix apparaissent dès qu\'elles parlent';
   const html = `<div class="speakers-head">
       <span class="now">${speaking ? `<span class="dot live"></span><strong>${esc(speaking)}</strong>&nbsp;parle` : 'Personne ne parle'}</span>
-      <span>${sp.list.length ? `${sp.list.length} voix reconnue${sp.list.length > 1 ? 's' : ''} · cliquez pour nommer` : 'Les voix apparaissent dès qu\'elles parlent'}</span>
+      <span class="sp-info">${info}</span>
     </div>
     <div class="speaker-grid">${chips.join('')}</div>`;
   if (el.innerHTML !== html) el.innerHTML = html;
@@ -413,7 +434,8 @@ function renderVoices(d) {
   const resummarize = ui.namesChanged
     ? `<div class="notice" style="margin-top:12px">${icon('sparkles')}<span style="flex:1">Noms modifiés : la transcription est à jour.</span><button class="btn" data-action="detail-resummarize">${icon('refresh')}Refaire la synthèse avec ces noms</button></div>`
     : '';
-  return `<div class="card voices"><div class="voices-head"><span class="section-label" style="margin:0">Intervenants</span><span class="hint">${d.voices.length ? 'Cliquez sur une voix pour lui donner un nom' : ''}</span></div>
+  const hint = d.exactNames ? `${icon('headset')}Pseudos Discord · cliquez pour renommer` : d.voices.length ? 'Cliquez sur une voix pour lui donner un nom' : '';
+  return `<div class="card voices"><div class="voices-head"><span class="section-label" style="margin:0">Intervenants</span><span class="hint">${hint}</span></div>
     <div class="speaker-grid left">${chips.join('')}</div>${resummarize}</div>`;
 }
 
@@ -439,6 +461,10 @@ async function loadSettings() {
   ui.settings = settings;
   ui.options = options;
   if (ui.page === 'settings') render();
+  if (ui.scrollTo) {
+    $(`#${ui.scrollTo}-card`)?.scrollIntoView({ block: 'start' });
+    ui.scrollTo = null;
+  }
 }
 
 function field(label, hint, control) {
@@ -508,15 +534,49 @@ function renderSettings() {
       ${field('API locale de Teams', '', `<div class="btn-row" style="align-items:center">${teamsState}<button class="btn" data-action="pair" ${teams.connected && !teams.paired ? '' : 'disabled'}>Demander l'autorisation</button></div>`)}
     </div>
 
-    <div class="card"><h3>${icon('headset')}Discord</h3>
-      <p class="desc">Rien à configurer. Echo lit les boutons « Rendre muet » et « Mettre en sourdine » de Discord : gardez sa fenêtre ouverte pendant l'appel (elle peut être réduite). Le push-to-talk n'est pas détecté : utilisez le muet de Discord.</p>
-    </div>
+    ${renderDiscordCard(s)}
 
     <div class="save-bar">
       <button class="btn ghost" data-action="open-logs">Journaux</button>
       <button class="btn primary" data-action="save-settings">${icon('check')}Enregistrer les paramètres</button>
     </div>
   </div>`;
+}
+
+function discordStatusHtml(d = {}) {
+  switch (d.status) {
+    case 'connected': return `<span class="chip good">${icon('check')}Connecté${d.user ? ` · ${esc(d.user)}` : ''}</span>${d.inVoice && d.channel ? `<span class="chip accent">${icon('headset')}${esc(d.channel)}</span>` : ''}`;
+    case 'needsAuth': return `<span class="chip warn">${icon('alert')}${d.error ? esc(d.error) : 'À autoriser : cliquez sur Connecter à Discord'}</span>`;
+    case 'connecting': return `<span class="chip">${icon('refresh')}Connexion…</span>`;
+    case 'closed': return `<span class="chip">${icon('info')}Discord n'est pas ouvert</span>`;
+    case 'error': return `<span class="chip bad">${icon('alert')}${esc(d.error ?? 'Erreur')}</span>`;
+    default: return `<span class="chip">${icon('info')}Non connecté</span>`;
+  }
+}
+
+function renderDiscordCard(s) {
+  const d = ui.status?.discord ?? {};
+  const linked = d.status === 'connected';
+  const configured = !!s.discordClientId;
+  return `<div class="card" id="discord-card"><h3>${icon('headset')}Discord</h3>
+      <p class="desc">Connectez Echo à votre Discord pour avoir le <strong>pseudo exact</strong> de chaque participant (en direct et dans la transcription), voir qui parle comme dans Discord, connaître exactement l'état de votre micro (muet, sourdine, <strong>push-to-talk</strong>) et détecter le début et la fin des appels. Echo ne lit que votre salon vocal : jamais vos messages.</p>
+      ${field('Connexion', 'Via l\'application Discord ouverte sur ce PC', `<div class="btn-row" id="discord-status" style="align-items:center">${discordStatusHtml(d)}</div>`)}
+      <details class="steps" ${linked ? '' : 'open'}>
+        <summary>${linked ? 'Comment ça marche' : 'Configurer (2 minutes, une seule fois)'}</summary>
+        <ol>
+          <li>Ouvrez le <a href="#" data-link="https://discord.com/developers/applications">portail développeur Discord</a> avec votre compte, cliquez sur <strong>New Application</strong>, nommez-la <strong>Echo</strong> et validez.</li>
+          <li>Menu <strong>OAuth2</strong> : copiez le <strong>Client ID</strong>, puis cliquez sur <strong>Reset Secret</strong> et copiez le <strong>Client Secret</strong>. Dans <strong>Redirects</strong>, ajoutez <code>http://localhost</code> et cliquez sur <strong>Save Changes</strong>.</li>
+          <li>Collez-les ci-dessous et cliquez sur <strong>Connecter à Discord</strong> : Discord ouvre une fenêtre d'autorisation, cliquez sur <strong>Autoriser</strong>.</li>
+        </ol>
+        <p class="hint">Cette application Discord est la vôtre : elle sert uniquement à autoriser Echo sur votre compte. Le secret est chiffré sur ce PC. Sans connexion, Echo reconnaît les participants à leur voix.</p>
+      </details>
+      ${field('Client ID', 'Portail développeur → OAuth2', `<input class="input" id="d-clientId" inputmode="numeric" value="${esc(s.discordClientId ?? '')}" placeholder="123456789012345678">`)}
+      ${field('Client Secret', 'Chiffré sur ce PC', `<input class="input" id="d-clientSecret" type="password" placeholder="${s.hasDiscordSecret ? 'Secret enregistré — laisser vide pour le conserver' : 'Collez le Client Secret'}">`)}
+      <div class="btn-row" style="justify-content:flex-end;padding-top:12px">
+        ${configured && (linked || d.status === 'needsAuth' || d.status === 'connecting') ? `<button class="btn ghost" data-action="discord-disconnect" ${linked ? '' : 'disabled'}>Déconnecter</button>` : ''}
+        <button class="btn primary" data-action="discord-connect" id="discord-connect">${icon('link')}${linked ? 'Reconnecter' : 'Connecter à Discord'}</button>
+      </div>
+    </div>`;
 }
 
 function readSettingsForm() {
@@ -568,7 +628,11 @@ document.addEventListener('click', async e => {
   if (!t) return;
 
   if (t.dataset.link) { e.preventDefault(); call('app.openExternal', { url: t.dataset.link }); return; }
-  if (t.dataset.nav) { navigate(t.dataset.nav); return; }
+  if (t.dataset.nav) {
+    navigate(t.dataset.nav);
+    if (t.dataset.scroll) ui.scrollTo = t.dataset.scroll;
+    return;
+  }
   if (t.dataset.open) { openDetail(t.dataset.open); return; }
   if (t.dataset.filter) { ui.filter = t.dataset.filter; render(); return; }
   if (t.dataset.tab) { ui.tab = t.dataset.tab; render(); return; }
@@ -622,6 +686,24 @@ document.addEventListener('click', async e => {
       toast(ok ? 'Demande envoyée' : 'Teams injoignable', ok ? 'Acceptez la demande dans la fenêtre de Teams.' : 'Vérifiez que l\'API est activée dans Teams.', ok ? 'info' : 'warning');
       break;
     }
+    case 'discord-connect': {
+      const clientId = $('#d-clientId').value.trim(), clientSecret = $('#d-clientSecret').value.trim();
+      t.disabled = true;
+      t.innerHTML = `${icon('refresh')}En attente de Discord…`;
+      toast('Autorisez Echo dans Discord', 'Discord ouvre une fenêtre d\'autorisation : cliquez sur Autoriser.');
+      try {
+        const r = await call('discord.connect', { clientId, clientSecret });
+        toast('Connecté à Discord', r?.user ? `Compte ${r.user} : les pseudos seront exacts.` : '');
+      } catch { /* toast already shown */ } finally {
+        ui.settings = await call('settings.get');
+        if (ui.page === 'settings') render();
+      }
+      break;
+    }
+    case 'discord-disconnect':
+      await call('discord.disconnect');
+      toast('Discord déconnecté', 'Echo reconnaîtra de nouveau les participants à leur voix.');
+      break;
     case 'save-settings': {
       ui.settings = await call('settings.save', readSettingsForm());
       applyTheme(ui.settings.theme);
@@ -717,6 +799,11 @@ function onState(status) {
 
   if (ui.page === 'record' && recordStructureKey() !== ui.structureKey) render();
   else { updateLive(); renderSidebar(); }
+  const discordEl = $('#discord-status');
+  if (discordEl) {
+    const html = discordStatusHtml(status.discord);
+    if (discordEl.innerHTML !== html) discordEl.innerHTML = html;
+  }
 
   if (wasRecording && !status.recording && ui.page === 'recordings') loadRecordings();
 }

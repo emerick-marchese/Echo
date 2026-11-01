@@ -47,6 +47,9 @@ internal sealed class CallRecorder : IAsyncDisposable
 
     public TimeSpan Elapsed => TimeSpan.FromTicks(AudioClock.Now100ns() - _start100ns);
 
+    /// <summary><see cref="AudioClock"/> time of the first sample of the file.</summary>
+    public long Start100ns => _start100ns;
+
     public string? MicrophoneName { get; private set; }
 
     public bool EchoCancellationActive { get; private set; }

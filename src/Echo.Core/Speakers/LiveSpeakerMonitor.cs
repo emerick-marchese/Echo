@@ -4,13 +4,19 @@ using Echo.Core.Audio;
 namespace Echo.Core.Speakers;
 
 /// <summary>Who is talking right now, for the recording screen.</summary>
+/// <param name="Channel">Discord voice channel, when known.</param>
+/// <param name="ExactNames">Names come from the calling application (Discord), not from voice prints.</param>
 public sealed record LiveSpeakers(
     bool MeSpeaking,
     double MeTalkSeconds,
     int? CurrentSpeakerId,
-    IReadOnlyList<LiveSpeaker> Speakers);
+    IReadOnlyList<LiveSpeaker> Speakers,
+    string? Channel = null,
+    bool ExactNames = false);
 
-public sealed record LiveSpeaker(int Id, string Name, bool Speaking, double TalkSeconds);
+/// <param name="Muted">Muted or deafened in the calling application (Discord only).</param>
+/// <param name="Present">Still in the call (Discord only; false once they left).</param>
+public sealed record LiveSpeaker(int Id, string Name, bool Speaking, double TalkSeconds, bool Muted = false, bool Present = true);
 
 /// <summary>A voice met during a call, saved with the recording to name the transcript.</summary>
 public sealed record SpeakerProfile(int Id, string Name, bool Renamed, float[] Centroid, double TalkSeconds);

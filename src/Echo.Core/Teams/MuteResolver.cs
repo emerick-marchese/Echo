@@ -8,6 +8,9 @@ public enum MuteSource
     /// <summary>Microphone button read in the application window (Teams fallback, Discord).</summary>
     AppWindow,
 
+    /// <summary>Connection to the Discord app (exact, pushed instantly, push-to-talk included).</summary>
+    DiscordRpc,
+
     Unknown,
 }
 
@@ -23,8 +26,14 @@ public static class MuteResolver
     /// <param name="apiPaired">We hold a token Teams gave us after the user allowed Echo.</param>
     /// <param name="windowMuted">State read from the application window (UI Automation), if found.</param>
     /// <param name="recordWhenUnknown">What to do when nothing tells us the mute state.</param>
-    public static MuteDecision Resolve(TeamsApiState api, bool apiPaired, bool? windowMuted, bool recordWhenUnknown)
+    /// <param name="discordMuted">State from the Discord connection, if connected and in a call.</param>
+    public static MuteDecision Resolve(TeamsApiState api, bool apiPaired, bool? windowMuted, bool recordWhenUnknown, bool? discordMuted = null)
     {
+        if (discordMuted is { } discord)
+        {
+            return new MuteDecision(discord, MuteSource.DiscordRpc);
+        }
+
         if (apiPaired && api.Connected && api.HasMeetingState && api.IsInMeeting)
         {
             return new MuteDecision(api.IsMuted, MuteSource.TeamsApi);

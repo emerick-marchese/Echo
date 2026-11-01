@@ -7,8 +7,8 @@
 1. choisissez **Teams** ou **Discord** ;
 2. cliquez sur **Démarrer l'enregistrement** ;
 3. Echo enregistre **uniquement** le son de l'application choisie et **votre micro, seulement quand il est actif dans cette application** : si vous êtes en muet (ou en sourdine dans Discord), votre voix n'est pas enregistrée ;
-4. pendant l'appel, Echo montre **qui parle en temps réel** : vous, et chaque autre participant reconnu à sa voix (« Intervenant 1 », « Intervenant 2 »…, que vous pouvez nommer d'un clic) ;
-5. à l'arrêt, Echo produit le **fichier audio**, la **transcription** (chaque phrase attribuée à vous ou à l'intervenant qui l'a dite) et une **synthèse** (résumé, points clés, décisions, actions, questions ouvertes, déroulé), consultables directement dans l'application.
+4. pendant l'appel, Echo montre **qui parle en temps réel** : vous, et chaque autre participant — avec son **pseudo Discord exact** si vous connectez Echo à Discord, sinon reconnu à sa voix (« Intervenant 1 », « Intervenant 2 »…, que vous pouvez nommer d'un clic) ;
+5. à l'arrêt, Echo produit le **fichier audio**, la **transcription** (chaque phrase attribuée à vous ou à la personne qui l'a dite) et une **synthèse** (résumé, points clés, décisions, actions, questions ouvertes, déroulé), consultables directement dans l'application.
 
 Options : démarrage automatique dès qu'un appel commence, arrêt automatique à la fin de l'appel, thème sombre ou clair.
 
@@ -33,7 +33,7 @@ Configuration requise : Windows 10 version 2004 ou plus récent / Windows 11, 64
 |---|---|
 | **Enregistrer** | Choix Teams / Discord (avec leur état : fermé, ouvert, en appel), gros bouton Démarrer / Arrêter, chronomètre, niveaux sonores en direct (participants / vous), état de votre micro (« Micro actif — enregistré » / « Micro coupé — non enregistré »), **qui parle en ce moment** et temps de parole de chacun (cliquez sur une voix pour lui donner un nom), options de démarrage et d'arrêt automatiques |
 | **Enregistrements** | Tous vos appels : recherche, filtre Teams / Discord, état du traitement. Pour chaque appel : lecteur audio, intervenants (renommables, avec « Refaire la synthèse avec ces noms »), synthèse, transcription cliquable (un clic sur un horodatage relance l'audio à ce moment), renommer, relancer la transcription, ouvrir le dossier, supprimer (corbeille) |
-| **Paramètres** | Thème, nom affiché, dossier, démarrage avec Windows, qualité audio, micro, annulation d'écho, modèle et langue de transcription, carte graphique, vocabulaire, moteur de synthèse, connexion à Teams |
+| **Paramètres** | Thème, nom affiché, dossier, démarrage avec Windows, qualité audio, micro, annulation d'écho, modèle et langue de transcription, carte graphique, vocabulaire, moteur de synthèse, connexion à Teams et à Discord |
 
 Fermer la fenêtre ne coupe pas Echo : il reste près de l'horloge (et continue d'enregistrer si un enregistrement est en cours). Clic droit sur l'icône : ouvrir Echo, démarrer / arrêter l'enregistrement, quitter.
 
@@ -51,9 +51,23 @@ Fermer la fenêtre ne coupe pas Echo : il reste près de l'horloge (et continue 
 
 Dans Teams : **Paramètres → Confidentialité → Gérer l'API** → **Activer l'API**. Pendant votre prochain appel enregistré, Teams demande d'autoriser **Echo** : acceptez (ou *Paramètres → Teams → Demander l'autorisation* pendant l'appel). Sans cette API, Echo lit le bouton micro de la fenêtre d'appel Teams.
 
-### Discord : rien à configurer
+### Discord : connectez Echo pour avoir les pseudos exacts (recommandé)
 
-Echo lit les boutons **Rendre muet** et **Mettre en sourdine** du panneau utilisateur de Discord. Gardez la fenêtre Discord ouverte pendant l'appel (elle peut être en arrière-plan ou réduite, mais pas fermée dans la zone de notification). Le **push-to-talk** n'est pas détecté : utilisez le muet de Discord pour exclure un passage.
+Une fois Echo connecté à votre Discord :
+
+- chaque participant apparaît avec son **pseudo exact** (surnom sur le serveur, sinon nom d'affichage), en direct et dans la transcription ; « qui parle » suit l'indicateur de Discord lui-même ;
+- l'état de votre micro est **exact** et instantané : muet, sourdine, et **push-to-talk** (votre voix n'est enregistrée que touche enfoncée) ;
+- le début et la fin des appels sont détectés dès que vous rejoignez ou quittez un salon vocal.
+
+Discord ne laisse ce type d'accès qu'à une application que vous créez vous-même (gratuit, 2 minutes, une seule fois) :
+
+1. Ouvrez le [portail développeur Discord](https://discord.com/developers/applications) avec votre compte → **New Application** → nommez-la `Echo` → **Create**.
+2. Menu **OAuth2** : copiez le **Client ID** ; cliquez sur **Reset Secret** et copiez le **Client Secret** ; dans **Redirects**, ajoutez `http://localhost` puis **Save Changes**.
+3. Dans Echo : *Paramètres → Discord*, collez-les et cliquez sur **Connecter à Discord**. Discord (l'application, ouverte sur le PC) affiche une fenêtre d'autorisation : cliquez sur **Autoriser**.
+
+C'est tout : Echo se reconnecte seul à chaque lancement de Discord et renouvelle l'autorisation. L'accès est limité à votre salon vocal (`rpc`, `rpc.voice.read`) : Echo ne lit pas vos messages. *Paramètres → Discord → Déconnecter* le retire ; vous pouvez aussi supprimer l'application dans le portail.
+
+Sans connexion, Echo reconnaît les participants à leur voix et lit les boutons **Rendre muet** / **Mettre en sourdine** de la fenêtre Discord (gardez-la ouverte pendant l'appel, elle peut être réduite) ; le push-to-talk n'est alors pas détecté.
 
 Quand Echo ne parvient pas à connaître l'état de votre micro, votre voix **n'est pas enregistrée** par défaut et l'application vous prévient (réglable dans *Paramètres → Audio*).
 
@@ -67,14 +81,15 @@ transcription.txt    [00:01:23] Moi : …
 synthese.md          compte rendu en Markdown
 compte-rendu.html    synthèse + lecteur audio + transcription, lisible dans n'importe quel navigateur
 infos.json           application, date, durée, état du traitement
-appel.env, transcription.json, voix.json   données internes (niveaux sonores, transcription et voix pour l'application)
+appel.env, transcription.json, voix.json, discord.json   données internes (niveaux sonores, transcription, voix, participants Discord et leurs tours de parole)
 ```
 
 ## Comment ça marche
 
 ```
 Teams ────► état : API locale Teams (ws://127.0.0.1:8124) ou bouton micro de la fenêtre ; appel détecté via l'usage du micro
-Discord ──► état : boutons « Rendre muet » / « Mettre en sourdine » (UI Automation) ; appel détecté via l'usage du micro
+Discord ──► connecté : application Discord sur le PC (RPC local autorisé par vous) → salon vocal, pseudos, qui parle, muet / push-to-talk
+            sinon : boutons « Rendre muet » / « Mettre en sourdine » (UI Automation) ; appel détecté via l'usage du micro
 
 Démarrer l'enregistrement (application choisie)
   son de l'app ─► capture WASAPI par processus (arbre ms-teams.exe ou Discord.exe) ─┐
@@ -88,13 +103,13 @@ Après l'arrêt
 
 - **Son de l'application uniquement** : la capture Windows *par processus* isole Teams ou Discord ; ni la musique, ni les notifications, ni les autres applications.
 - **Micro « tel que l'application l'entend »** : le mixage a une seconde de retard sur le temps réel, ce qui permet d'appliquer chaque passage en muet au bon endroit (avec 250 ms de marge). L'API Teams signale les changements instantanément ; les boutons des fenêtres sont lus 5 fois par seconde.
-- **Qui parle ?** Votre voix est reconnue par votre micro (après la porte « muet »). Les autres participants sont reconnus à leur **empreinte vocale** (modèle CAM++, 28 Mo, calculé sur le PC) : en direct toutes les 0,4 s sur la dernière 1,6 s de son, puis, après l'appel, phrase par phrase avec un regroupement plus précis. Les noms donnés pendant l'appel sont repris dans la transcription. Ça marche pareil sur Teams et Discord, sans configuration ; deux voix très proches peuvent parfois être confondues.
+- **Qui parle ?** Sur Discord connecté, Echo note qui parle d'après Discord lui-même, avec le pseudo de chacun, sur la même horloge que l'audio : chaque phrase de la transcription prend le pseudo de la personne que Discord montrait en train de parler. Sinon, votre voix est reconnue par votre micro (après la porte « muet ») et les autres participants à leur **empreinte vocale** (modèle CAM++, 28 Mo, calculé sur le PC) : en direct toutes les 0,4 s sur la dernière 1,6 s de son, puis, après l'appel, phrase par phrase avec un regroupement plus précis. Les noms donnés pendant l'appel sont repris dans la transcription. Ça marche pareil sur Teams et Discord, sans configuration ; deux voix très proches peuvent parfois être confondues.
 - **Transcription fiable** : seuls les passages parlés vont à Whisper (pas de phrases inventées dans les silences) ; GPU (Vulkan) si disponible.
 - **Robuste** : l'audio est écrit au fil de l'eau ; si le PC s'éteint pendant un appel, l'enregistrement est conservé et traité au démarrage suivant. Les enregistrements de moins de 8 secondes sont ignorés.
 
 ## Limites connues
 
-- Un seul appel est enregistré à la fois. Les intervenants sont reconnus à la voix, pas par leur compte Teams / Discord : leurs vrais noms ne sont connus que si vous les donnez (ou si la synthèse les déduit de la conversation).
+- Un seul appel est enregistré à la fois. Sur Teams (et sur Discord non connecté), les intervenants sont reconnus à la voix : leurs vrais noms ne sont connus que si vous les donnez (ou si la synthèse les déduit de la conversation). Sur Discord connecté, deux personnes qui parlent exactement en même temps dans une même phrase sont attribuées à celle qui parle le plus longtemps.
 - Un **casque** donne le meilleur résultat ; sans casque, l'annulation d'écho de Windows retire le son des haut-parleurs si le matériel la prend en charge.
 - Teams et Discord dans le navigateur ne sont pas pris en charge.
 - La transcription d'une heure prend de quelques minutes (GPU) à environ une heure (processeur seul, modèle « Précis ») ; elle tourne en arrière-plan.
@@ -122,7 +137,7 @@ dotnet publish src/Echo/Echo.csproj -c Release -r win-x64 --self-contained true 
 ```
 
 ```bash
-"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=2.0.0 installer\Echo.iss
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=2.2.0 installer\Echo.iss
 ```
 
 L'interface (`src/Echo/ui`) s'ouvre aussi dans un navigateur, avec des données de démonstration : servez le dossier (`python -m http.server` dans `src/Echo/ui`) puis ouvrez `index.html` (paramètres d'URL : `?page=recordings`, `?recording=1`, `?theme=light`…).
@@ -131,7 +146,7 @@ Le workflow `.github/workflows/build.yml` teste, compile et produit `Echo-Setup.
 
 | Dossier | Contenu |
 |---|---|
-| `src/Echo.Core` | Logique testée : applications prises en charge, mixage et porte « muet », Opus, détection d'appel, API Teams, boutons Discord, transcription Whisper, synthèse, bibliothèque des enregistrements, compte rendu HTML |
+| `src/Echo.Core` | Logique testée : applications prises en charge, mixage et porte « muet », Opus, détection d'appel, API Teams, connexion Discord (IPC, OAuth, salon vocal) et boutons Discord, transcription Whisper, voix, synthèse, bibliothèque des enregistrements, compte rendu HTML |
 | `src/Echo` | Application Windows : fenêtre WebView2 et pont vers l'interface, moteur d'enregistrement, captures WASAPI (NAudio), UI Automation, icône de notification |
 | `src/Echo/ui` | Interface (HTML, CSS, JavaScript sans dépendance) |
 | `tests/Echo.Tests` | Tests unitaires et de bout en bout |

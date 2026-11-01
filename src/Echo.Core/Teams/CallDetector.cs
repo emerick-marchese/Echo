@@ -24,6 +24,7 @@ public sealed class CallDetector
     private bool _appRunning;
     private TeamsApiState _api = TeamsApiState.Disconnected;
     private bool _micInUse;
+    private bool? _direct;
     private DateTime? _rawSince;
     private bool _rawInCall;
     private bool _manualRecording;
@@ -51,6 +52,12 @@ public sealed class CallDetector
 
     public void SetMicInUse(bool inUse) => _micInUse = inUse;
 
+    /// <summary>
+    /// Exact call state from the application itself (Discord connection: in a voice channel
+    /// or not); null when unknown. When known, it replaces the other signals.
+    /// </summary>
+    public void SetDirectCallState(bool? inCall) => _direct = inCall;
+
     /// <summary>Starts recording now, even if no call is detected.</summary>
     public CallEvent StartManually()
     {
@@ -74,8 +81,8 @@ public sealed class CallDetector
     /// <summary>Evaluates the signals; call regularly (about once per second).</summary>
     public CallEvent Tick(DateTime now)
     {
-        bool apiSaysCall = _api.SuggestsMeeting;
-        bool raw = _appRunning && (apiSaysCall || _micInUse);
+        bool apiSaysCall = _direct ?? _api.SuggestsMeeting;
+        bool raw = _appRunning && (_direct ?? (apiSaysCall || _micInUse));
         if (raw != _rawInCall)
         {
             _rawInCall = raw;

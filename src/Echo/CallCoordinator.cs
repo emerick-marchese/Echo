@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using Echo.Core;
 using Echo.Core.Apps;
+using Echo.Core.Audio;
+using Echo.Core.Discord;
 using Echo.Core.Output;
 using Echo.Core.Settings;
 using Echo.Core.Speakers;
@@ -62,6 +64,7 @@ internal sealed class CallCoordinator : IAsyncDisposable
     private readonly SettingsStore _settings;
     private readonly IReadOnlyList<AppWatch> _watches = CallApps.All.Select(a => new AppWatch(a.App)).ToList();
     private readonly TeamsLocalApiClient _api;
+    private readonly System.Net.Http.HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
     private readonly MeetingTitleTracker _titles = new();
     private readonly ConcurrentQueue<Func<Task>> _commands = new();
     private readonly CancellationTokenSource _cts = new();
@@ -70,6 +73,7 @@ internal sealed class CallCoordinator : IAsyncDisposable
 
     private volatile CallRecorder? _recorder;
     private volatile LiveSpeakerMonitor? _speakers;
+    private volatile DiscordCallLog? _discordLog;
     private ISpeakerEmbedder? _embedder;
     private bool _voiceModelRequested;
     private volatile AppWatch? _active;
@@ -86,10 +90,20 @@ internal sealed class CallCoordinator : IAsyncDisposable
     private Task? _loop;
     private Task? _muteLoop;
     private Task? _apiLoop;
+    private Task? _discordLoop;
 
     public CallCoordinator(SettingsStore settings)
     {
         _settings = settings;
+        Discord = new DiscordVoiceSession(
+            () => _settings.DiscordCredentials,
+            tokens => _settings.SaveDiscordTokens(tokens),
+            // Only knock on Discord's door while it runs.
+            ct => Watch(CallApp.Discord).Running ? DiscordIpcChannel.ConnectToDesktopAppAsync(ct) : Task.FromResult<Stream?>(null),
+            new DiscordOAuth(_http));
+        Discord.StateChanged += OnDiscordState;
+        Discord.SpeakingChanged += (userId, speaking, at) => _discordLog?.Speaking(userId, speaking, at);
+
         _api = new TeamsLocalApiClient(
             () => _settings.Current.TeamsApiToken,
             token => _settings.Update(s => s.TeamsApiToken = token),
@@ -137,11 +151,17 @@ internal sealed class CallCoordinator : IAsyncDisposable
 
     public ProcessingQueue Processing { get; }
 
+    /// <summary>Connection to the Discord app (exact names, who speaks, mute and push-to-talk).</summary>
+    public DiscordVoiceSession Discord { get; }
+
     public CoordinatorStatus Status { get; private set; } = new(
         TrayState.Idle, [], null, null, false, null, TeamsApiState.Disconnected, false, null, 0);
 
-    /// <summary>Who is speaking in the current recording (null when not recording or voices are off).</summary>
-    public LiveSpeakers? Speakers => _speakers?.Snapshot();
+    /// <summary>
+    /// Who is speaking in the current recording: Discord's own names and speaking indicator
+    /// when connected, else voices recognised by their voice print (null when neither).
+    /// </summary>
+    public LiveSpeakers? Speakers => _discordLog?.Snapshot(AudioClock.Now100ns()) ?? _speakers?.Snapshot();
 
     /// <summary>Names a voice during the call; the name is kept in the transcript.</summary>
     public bool RenameLiveSpeaker(int id, string name) => _speakers?.Rename(id, name) ?? false;
@@ -161,6 +181,7 @@ internal sealed class CallCoordinator : IAsyncDisposable
         }
 
         _apiLoop = Task.Run(() => _api.RunAsync(() => Watch(CallApp.Teams).Running, _cts.Token));
+        _discordLoop = Task.Run(() => Discord.RunAsync(_cts.Token));
         _loop = Task.Run(LoopAsync);
         _muteLoop = Task.Run(MuteLoopAsync);
     }
@@ -249,6 +270,8 @@ internal sealed class CallCoordinator : IAsyncDisposable
             var detector = watch.Detector;
             detector.SetAppRunning(watch.Running);
             detector.SetApiState(watch.App == CallApp.Teams ? _api.State : TeamsApiState.Disconnected);
+            var discord = Discord.State;
+            detector.SetDirectCallState(watch.App == CallApp.Discord && discord.Connected ? discord.InVoice : null);
             detector.SetMicInUse(watch.Running && MicrophoneUsageMonitor.IsUsingMicrophone(watch.App));
 
             bool autoStart = settings.AutoRecord && settings.SelectedApp == watch.App;
@@ -311,10 +334,14 @@ internal sealed class CallCoordinator : IAsyncDisposable
                 _muteSourcesUsed.Add(initialMute.Source);
             }
 
-            _speakers = settings.IdentifyVoices ? CreateSpeakerMonitor() : null;
+            // Connected to Discord: names and speaking turns come from Discord itself, no need
+            // to recognise voices.
+            bool discordNames = watch.App == CallApp.Discord && Discord.State.Connected;
+            _speakers = settings.IdentifyVoices && !discordNames ? CreateSpeakerMonitor() : null;
             var options = new RecorderOptions(settings.OpusBitrate, settings.MicrophoneDeviceId, settings.EchoCancellation, settings.MuteLookBackMs);
             _recorder = await CallRecorder.StartAsync(_folder.AudioPath, _folder.EnvelopePath, _metadata.Title, options, watch.Roots, initialMute.Muted, _speakers).ConfigureAwait(false);
             _recordingStartedUtc = DateTime.UtcNow;
+            if (watch.App == CallApp.Discord) StartDiscordLog(Discord.State);
             Log.Info($"Enregistrement {appName} démarré ({(watch.Detector.IsManual ? "manuel" : "automatique")}) : {_folder.Path}");
 
             if (!watch.Running)
@@ -347,6 +374,7 @@ internal sealed class CallCoordinator : IAsyncDisposable
             _recordingStartedUtc = null;
             _speakers?.Dispose();
             _speakers = null;
+            _discordLog = null;
             watch.Detector.StopManually();
             if (_folder is not null)
             {
@@ -373,7 +401,7 @@ internal sealed class CallCoordinator : IAsyncDisposable
                 "Votre voix n'est pas enregistrée",
                 watch.App == CallApp.Teams
                     ? "Echo ne sait pas si votre micro est actif dans Teams. Activez l'API tierce de Teams (Echo → Paramètres → Teams)."
-                    : "Echo ne voit pas les boutons micro de Discord : gardez la fenêtre Discord ouverte (elle peut être en arrière-plan ou réduite).",
+                    : "Echo ne voit pas les boutons micro de Discord : gardez la fenêtre Discord ouverte (elle peut être réduite), ou connectez Echo à Discord (Paramètres → Discord).",
                 ToolTipIcon.Warning));
         }
 
@@ -458,8 +486,9 @@ internal sealed class CallCoordinator : IAsyncDisposable
         var api = watch.App == CallApp.Teams ? _api.State : TeamsApiState.Disconnected;
         bool paired = watch.App == CallApp.Teams && _api.HasToken;
         bool apiTrusted = paired && api.Connected && api.HasMeetingState && api.IsInMeeting;
-        bool? window = apiTrusted ? null : _windowReader?.ReadMuted(watch.AllProcesses);
-        return MuteResolver.Resolve(api, paired, window, settings.RecordMicWhenMuteUnknown);
+        bool? discord = watch.App == CallApp.Discord ? Discord.State.MicrophoneMuted : null;
+        bool? window = apiTrusted || discord is not null ? null : _windowReader?.ReadMuted(watch.AllProcesses);
+        return MuteResolver.Resolve(api, paired, window, settings.RecordMicWhenMuteUnknown, discord);
     }
 
     private async Task MaybeRequestPairingAsync()
@@ -489,6 +518,18 @@ internal sealed class CallCoordinator : IAsyncDisposable
         if (recorder is null || folder is null || metadata is null) return;
 
         var duration = recorder.Elapsed;
+        if (_discordLog is { } discordLog)
+        {
+            _discordLog = null;
+            try
+            {
+                discordLog.Finish(recorder.Start100ns + duration.Ticks).Save(folder.DiscordPath);
+            }
+            catch (IOException ex)
+            {
+                Log.Warn($"Pseudos Discord non enregistrés : {ex.Message}");
+            }
+        }
         await recorder.DisposeAsync().ConfigureAwait(false);
         if (_speakers is { } speakers)
         {
@@ -580,6 +621,7 @@ internal sealed class CallCoordinator : IAsyncDisposable
         {
             MuteSource.TeamsApi => "API Teams",
             MuteSource.AppWindow => "fenêtre de l'application",
+            MuteSource.DiscordRpc => "connexion Discord",
             _ => "inconnu",
         });
         return string.Join(", ", names);
@@ -620,6 +662,32 @@ internal sealed class CallCoordinator : IAsyncDisposable
         StatusChanged?.Invoke(Status);
     }
 
+    /// <summary>
+    /// Discord changed (someone joined, spoke, muted…): follow it in the recording, and apply
+    /// the user's microphone state right away (mute, deafen, push-to-talk key).
+    /// </summary>
+    private void OnDiscordState(DiscordVoiceState state)
+    {
+        try
+        {
+            if (_active?.App != CallApp.Discord || _recorder is null) return;
+            if (_discordLog is { } log) log.Update(state);
+            else StartDiscordLog(state);
+            ApplyMute();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Erreur en suivant l'état de Discord", ex);
+        }
+    }
+
+    private void StartDiscordLog(DiscordVoiceState state)
+    {
+        if (_recorder is not { } recorder || !state.Connected || _discordLog is not null) return;
+        _discordLog = new DiscordCallLog(recorder.Start100ns, state, AudioClock.Now100ns());
+        Log.Info($"Pseudos Discord suivis pendant l'enregistrement ({state.Participants.Count} participant(s)).");
+    }
+
     private MuteDecision? CurrentMute()
     {
         lock (_muteLock) return _mute;
@@ -650,16 +718,18 @@ internal sealed class CallCoordinator : IAsyncDisposable
 
         _embedder?.Dispose();
         await _api.DisposeAsync().ConfigureAwait(false);
-        if (_apiLoop is not null)
+        foreach (var task in new[] { _apiLoop, _discordLoop })
         {
+            if (task is null) continue;
             try
             {
-                await _apiLoop.ConfigureAwait(false);
+                await task.ConfigureAwait(false);
             }
             catch (Exception)
             {
             }
         }
+        _http.Dispose();
         _cts.Dispose();
     }
 }
