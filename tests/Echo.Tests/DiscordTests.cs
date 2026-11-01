@@ -41,6 +41,17 @@ internal sealed class FakeDiscord : IAsyncDisposable
 
     public bool RejectClientId { get; set; }
 
+    /// <summary>Current Discord: AUTHORIZE fails without redirect_uri.</summary>
+    public bool RequireRedirect { get; set; } = true;
+
+    /// <summary>Older Discord: unknown AUTHORIZE arguments are refused.</summary>
+    public bool RejectUnknownArguments { get; set; }
+
+    /// <summary>The redirect declared in the application (null = any).</summary>
+    public string? RegisteredRedirect { get; set; } = "http://localhost";
+
+    public string? AuthorizeArgs { get; private set; }
+
     public bool InChannel { get; set; } = true;
 
     public int Connections { get; private set; }
@@ -103,6 +114,10 @@ internal sealed class FakeDiscord : IAsyncDisposable
         switch (cmd)
         {
             case "AUTHORIZE":
+                AuthorizeArgs = args?.ToJsonString();
+                if (RejectUnknownArguments && args?["redirect_uri"] is not null) return (new JsonObject { ["code"] = 4000, ["message"] = "Invalid payload" }, true);
+                if (RequireRedirect && args?["redirect_uri"] is null) return (new JsonObject { ["code"] = 5000, ["message"] = "OAuth2 Error: invalid_request: Missing \"redirect_uri\" in request." }, true);
+                if (RegisteredRedirect is not null && args?["redirect_uri"] is { } r && (string?)r != RegisteredRedirect) return (new JsonObject { ["code"] = 5000, ["message"] = "OAuth2 Error: invalid_request: Invalid \"redirect_uri\" in request." }, true);
                 return (new JsonObject { ["code"] = "the-code" }, false);
             case "AUTHENTICATE":
                 string token = (string)args!["access_token"]!;
@@ -268,6 +283,7 @@ public class DiscordSessionTests
 
         var me = await h.Session.AuthorizeAsync(CancellationToken.None);
         Assert.Equal("Emerick", me.DisplayName);
+        Assert.Contains("\"redirect_uri\":\"http://localhost\"", h.Discord.AuthorizeArgs);
 
         // Code exchanged for tokens with the user's application, then saved.
         var exchange = Assert.Single(h.Http.Requests);
@@ -325,6 +341,38 @@ public class DiscordSessionTests
         // Joining another channel.
         await h.Discord.Dispatch("VOICE_CHANNEL_SELECT", new JsonObject { ["channel_id"] = "500", ["guild_id"] = "9" });
         await h.WaitFor(s => s.InVoice && s.Participants.Count == 2, "nouvel appel");
+    }
+
+    [Fact]
+    public async Task Older_Discord_without_redirect_argument_still_authorizes()
+    {
+        await using var h = new Harness();
+        h.Discord.RequireRedirect = false;
+        h.Discord.RejectUnknownArguments = true;
+        await h.WaitFor(s => s.Status == DiscordLinkStatus.NeedsAuthorization, "autorisation demandée");
+        await h.Session.AuthorizeAsync(CancellationToken.None);
+        Assert.DoesNotContain("redirect_uri", h.Discord.AuthorizeArgs);
+        await h.WaitFor(s => s.InVoice, "connecté");
+    }
+
+    [Fact]
+    public async Task A_redirect_missing_from_the_application_is_explained()
+    {
+        await using var h = new Harness();
+        h.Discord.RegisteredRedirect = "http://localhost:7373/callback";
+        await h.WaitFor(s => s.Status == DiscordLinkStatus.NeedsAuthorization, "autorisation demandée");
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => h.Session.AuthorizeAsync(CancellationToken.None));
+        Assert.Contains("Redirects", ex.Message);
+        Assert.Contains("http://localhost", ex.Message);
+        Assert.Null(h.Tokens);
+    }
+
+    [Fact]
+    public void Authorization_errors_are_explained()
+    {
+        Assert.Contains("Redirects", DiscordVoiceSession.DescribeAuthorizationError("OAuth2 Error: invalid_request: Missing \"redirect_uri\" in request."));
+        Assert.Equal("Autorisation refusée dans Discord.", DiscordVoiceSession.DescribeAuthorizationError("OAuth2 Error: access_denied: The resource owner or authorization server denied the request"));
+        Assert.Contains("compte Discord", DiscordVoiceSession.DescribeAuthorizationError("OAuth2 Error: invalid_scope"));
     }
 
     [Fact]

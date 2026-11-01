@@ -13,6 +13,7 @@ public sealed class DiscordRpcException(int code, string message) : Exception(me
 
     // RPC error codes.
     public const int OAuth2Error = 5000;
+    public const int InvalidPayload = 4000;
     public const int InvalidPermissions = 4006;
     public const int InvalidClientId = 4007;
     public const int InvalidToken = 4009;

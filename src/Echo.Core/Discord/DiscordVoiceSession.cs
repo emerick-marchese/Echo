@@ -331,17 +331,13 @@ public sealed class DiscordVoiceSession
         JsonElement answer;
         try
         {
-            answer = await client.RequestAsync(
-                "AUTHORIZE",
-                new { client_id = credentials.ClientId, scopes = Scopes },
-                timeout: TimeSpan.FromMinutes(5),
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+            // Discord now wants the redirect (declared in the application) from this step on.
+            answer = await RequestAuthorizationAsync(client, credentials.ClientId, withRedirect: true, cancellationToken).ConfigureAwait(false);
         }
-        catch (DiscordRpcException ex) when (ex.Code == DiscordRpcException.OAuth2Error)
+        catch (DiscordRpcException ex) when (ex.Code == DiscordRpcException.InvalidPayload)
         {
-            throw new InvalidOperationException(ex.Message.Contains("denied", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("cancel", StringComparison.OrdinalIgnoreCase)
-                ? "Autorisation refusée dans Discord."
-                : $"Discord a refusé l'autorisation : {ex.Message}");
+            // Older Discord versions refuse unknown arguments.
+            answer = await RequestAuthorizationAsync(client, credentials.ClientId, withRedirect: false, cancellationToken).ConfigureAwait(false);
         }
 
         string code = answer.ValueKind == JsonValueKind.Object && answer.TryGetProperty("code", out var c2) ? c2.GetString() ?? string.Empty : string.Empty;
@@ -365,6 +361,38 @@ public sealed class DiscordVoiceSession
             await Task.Delay(150, cancellationToken).ConfigureAwait(false);
         }
         throw new InvalidOperationException("Discord ne répond pas.");
+    }
+
+    private static async Task<JsonElement> RequestAuthorizationAsync(DiscordRpcClient client, string clientId, bool withRedirect, CancellationToken cancellationToken)
+    {
+        object args = withRedirect
+            ? new { client_id = clientId, scopes = Scopes, redirect_uri = DiscordOAuth.RedirectUri }
+            : new { client_id = clientId, scopes = Scopes };
+        try
+        {
+            return await client.RequestAsync("AUTHORIZE", args, timeout: TimeSpan.FromMinutes(5), cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (DiscordRpcException ex) when (ex.Code == DiscordRpcException.OAuth2Error)
+        {
+            throw new InvalidOperationException(DescribeAuthorizationError(ex.Message));
+        }
+    }
+
+    internal static string DescribeAuthorizationError(string message)
+    {
+        if (message.Contains("denied", StringComparison.OrdinalIgnoreCase) || message.Contains("cancel", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Autorisation refusée dans Discord.";
+        }
+        if (message.Contains("redirect", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Discord refuse l'adresse de redirection : dans le portail développeur, menu OAuth2 → Redirects, ajoutez exactement {DiscordOAuth.RedirectUri} (sans « / » à la fin), cliquez sur Save Changes, puis réessayez.";
+        }
+        if (message.Contains("scope", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Discord refuse l'accès au salon vocal pour cette application : elle doit appartenir au compte Discord connecté sur ce PC (créez-la avec ce compte).";
+        }
+        return $"Discord a refusé l'autorisation : {message}";
     }
 
     private async Task AuthenticateAsync(DiscordRpcClient client, DiscordCredentials credentials, CancellationToken cancellationToken)

@@ -565,7 +565,7 @@ function renderDiscordCard(s) {
         <summary>${linked ? 'Comment ça marche' : 'Configurer (2 minutes, une seule fois)'}</summary>
         <ol>
           <li>Ouvrez le <a href="#" data-link="https://discord.com/developers/applications">portail développeur Discord</a> avec votre compte, cliquez sur <strong>New Application</strong>, nommez-la <strong>Echo</strong> et validez.</li>
-          <li>Menu <strong>OAuth2</strong> : copiez le <strong>Client ID</strong>, puis cliquez sur <strong>Reset Secret</strong> et copiez le <strong>Client Secret</strong>. Dans <strong>Redirects</strong>, ajoutez <code>http://localhost</code> et cliquez sur <strong>Save Changes</strong>.</li>
+          <li>Menu <strong>OAuth2</strong> : copiez le <strong>Client ID</strong>, puis cliquez sur <strong>Reset Secret</strong> et copiez le <strong>Client Secret</strong>. Dans <strong>Redirects</strong>, cliquez sur <strong>Add Redirect</strong>, saisissez exactement <code>http://localhost</code> (sans « / » à la fin) et cliquez sur <strong>Save Changes</strong>.</li>
           <li>Collez-les ci-dessous et cliquez sur <strong>Connecter à Discord</strong> : Discord ouvre une fenêtre d'autorisation, cliquez sur <strong>Autoriser</strong>.</li>
         </ol>
         <p class="hint">Cette application Discord est la vôtre : elle sert uniquement à autoriser Echo sur votre compte. Le secret est chiffré sur ce PC. Sans connexion, Echo reconnaît les participants à leur voix.</p>

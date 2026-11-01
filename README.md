@@ -62,7 +62,7 @@ Une fois Echo connecté à votre Discord :
 Discord ne laisse ce type d'accès qu'à une application que vous créez vous-même (gratuit, 2 minutes, une seule fois) :
 
 1. Ouvrez le [portail développeur Discord](https://discord.com/developers/applications) avec votre compte → **New Application** → nommez-la `Echo` → **Create**.
-2. Menu **OAuth2** : copiez le **Client ID** ; cliquez sur **Reset Secret** et copiez le **Client Secret** ; dans **Redirects**, ajoutez `http://localhost` puis **Save Changes**.
+2. Menu **OAuth2** : copiez le **Client ID** ; cliquez sur **Reset Secret** et copiez le **Client Secret** ; dans **Redirects**, cliquez sur **Add Redirect**, saisissez exactement `http://localhost` (sans `/` à la fin) puis **Save Changes**.
 3. Dans Echo : *Paramètres → Discord*, collez-les et cliquez sur **Connecter à Discord**. Discord (l'application, ouverte sur le PC) affiche une fenêtre d'autorisation : cliquez sur **Autoriser**.
 
 C'est tout : Echo se reconnecte seul à chaque lancement de Discord et renouvelle l'autorisation. L'accès est limité à votre salon vocal (`rpc`, `rpc.voice.read`) : Echo ne lit pas vos messages. *Paramètres → Discord → Déconnecter* le retire ; vous pouvez aussi supprimer l'application dans le portail.
